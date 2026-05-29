@@ -1,0 +1,36 @@
+{
+  "channels": {
+    "telegram": {
+      "token": "${TELEGRAM_TOKEN}",
+      "allowFrom": "${OPENCLAW_ALLOW_FROM}"
+    },
+    "discord": {
+      "token": "${DISCORD_TOKEN}"
+    },
+    "whatsapp": {
+      "allowFrom": "${OPENCLAW_ALLOW_FROM}",
+      "groups": {
+        "*": { "requireMention": true }
+      }
+    }
+  },
+  "providers": {
+    "anthropic": {
+      "apiKey": "${ANTHROPIC_API_KEY}",
+      "model": "claude-sonnet-4-6"
+    }
+  },
+  "messages": {
+    "groupChat": {
+      "mentionPatterns": ["@openclaw", "@bot"]
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "secret": "${OPENCLAW_SECRET}"
+  },
+  "memory": {
+    "enabled": true,
+    "path": "~/.openclaw/memory"
+  }
+}
