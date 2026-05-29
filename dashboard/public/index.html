@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SelfClawy Dashboard</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#0d0f14;--surface:#13161e;--border:#1e2330;--accent:#ff5a36;--accent-dim:rgba(255,90,54,0.12);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#eab308;--text:#e2e8f0;--muted:#64748b;--mono:'Fira Mono',monospace}
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+    header{display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;border-bottom:1px solid var(--border);background:var(--surface)}
+    .logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.1rem}
+    .logo span{color:var(--accent)}
+    .pill{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .75rem;border-radius:999px;font-size:.78rem;font-weight:600;text-transform:uppercase}
+    .pill.online{background:var(--green-dim);color:var(--green)}
+    .pill.offline{background:var(--accent-dim);color:var(--accent)}
+    .pill.loading{background:rgba(234,179,8,.12);color:var(--yellow)}
+    .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+    main{max-width:960px;margin:0 auto;padding:2rem}
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:2rem}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem}
+    .card-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem}
+    .card-value{font-size:1.6rem;font-weight:700}
+    .card-value.green{color:var(--green)}
+    .controls{display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap}
+    button{padding:.6rem 1.4rem;border-radius:8px;border:none;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .15s,transform .1s}
+    button:active{transform:scale(.97)}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-ghost{background:var(--border);color:var(--text)}
+    .btn-danger{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+    .log-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+    .log-header{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;border-bottom:1px solid var(--border);font-size:.8rem;color:var(--muted)}
+    .log-header .dots{display:flex;gap:6px}
+    .dot-r{width:10px;height:10px;border-radius:50%;background:#ef4444}
+    .dot-y{width:10px;height:10px;border-radius:50%;background:var(--yellow)}
+    .dot-g{width:10px;height:10px;border-radius:50%;background:var(--green)}
+    #log{font-family:var(--mono);font-size:.8rem;color:#94a3b8;padding:1rem;height:340px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6}
+    .line-ok{color:var(--green)}.line-err{color:#f87171}.line-warn{color:var(--yellow)}.line-info{color:#60a5fa}
+    .links{margin-top:1.5rem;display:flex;gap:1rem;flex-wrap:wrap}
+    .link-card{flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:border-color .15s;display:flex;align-items:center;gap:.75rem}
+    .link-card:hover{border-color:var(--accent)}
+    .link-icon{font-size:1.4rem}
+    .link-label{font-size:.85rem;font-weight:600}
+    .link-sub{font-size:.72rem;color:var(--muted)}
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo"><span style="font-size:1.4rem">🦞</span><div>Self<span>Clawy</span> <span style="color:var(--muted);font-weight:400;font-size:.85rem">dashboard</span></div></div>
+  <div id="status-pill" class="pill loading"><span class="dot"></span> Checking…</div>
+</header>
+<main>
+  <div class="cards">
+    <div class="card"><div class="card-label">Status</div><div class="card-value" id="stat-status">—</div></div>
+    <div class="card"><div class="card-label">Uptime</div><div class="card-value green" id="stat-uptime">—</div></div>
+    <div class="card"><div class="card-label">Gateway Health</div><div class="card-value" id="stat-health">—</div></div>
+    <div class="card"><div class="card-label">Started At</div><div class="card-value" style="font-size:1rem;padding-top:.3rem" id="stat-started">—</div></div>
+  </div>
+  <div class="controls">
+    <button class="btn-primary" id="btn-start" onclick="action('start')">▶ Start</button>
+    <button class="btn-ghost" id="btn-restart" onclick="action('restart')">↺ Restart</button>
+    <button class="btn-danger" id="btn-stop" onclick="action('stop')">■ Stop</button>
+  </div>
+  <div class="log-wrap">
+    <div class="log-header">
+      <div class="dots"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div></div>
+      <span>openclaw — live logs</span>
+      <button class="btn-ghost" style="padding:.2rem .7rem;font-size:.75rem" onclick="clearLog()">Clear</button>
+    </div>
+    <div id="log"></div>
+  </div>
+  <div class="links">
+    <a class="link-card" href="#" onclick="openGateway()"><span class="link-icon">🌐</span><div><div class="link-label">OpenClaw UI</div><div class="link-sub">Open gateway dashboard</div></div></a>
+    <a class="link-card" href="https://docs.openclaw.ai" target="_blank"><span class="link-icon">📖</span><div><div class="link-label">Documentation</div><div class="link-sub">docs.openclaw.ai</div></div></a>
+    <a class="link-card" href="https://github.com/hbkdad/selfclawy" target="_blank"><span class="link-icon">🐙</span><div><div class="link-label">GitHub</div><div class="link-sub">Source code</div></div></a>
+  </div>
+</main>
+<script>
+const socket=io(),logEl=document.getElementById('log');
+socket.emit('subscribe-logs');
+socket.on('log',(line)=>{
+  const s=document.createElement('span');
+  if(/error|fatal/i.test(line))s.className='line-err';
+  else if(/warn/i.test(line))s.className='line-warn';
+  else if(/info|start|listen/i.test(line))s.className='line-info';
+  else if(/success|ready/i.test(line))s.className='line-ok';
+  s.textContent=line;logEl.appendChild(s);logEl.scrollTop=logEl.scrollHeight;
+});
+function clearLog(){logEl.innerHTML='';}
+async function poll(){
+  try{
+    const d=await(await fetch('/api/status')).json();
+    const pill=document.getElementById('status-pill');
+    if(d.running&&d.healthy){pill.className='pill online';pill.innerHTML='<span class="dot"></span> Online';}
+    else if(d.running){pill.className='pill loading';pill.innerHTML='<span class="dot"></span> Starting…';}
+    else{pill.className='pill offline';pill.innerHTML='<span class="dot"></span> Offline';}
+    document.getElementById('stat-status').textContent=d.status||'—';
+    document.getElementById('stat-health').textContent=d.healthy?'✓ Healthy':'✗ Down';
+    document.getElementById('stat-health').style.color=d.healthy?'var(--green)':'var(--accent)';
+    const u=d.uptime;
+    document.getElementById('stat-uptime').textContent=u?`${Math.floor(u/3600)}h ${Math.floor((u%3600)/60)}m ${u%60}s`:'—';
+    document.getElementById('stat-started').textContent=d.startedAt?new Date(d.startedAt).toLocaleString():'—';
+    document.getElementById('btn-start').disabled=d.running;
+    document.getElementById('btn-stop').disabled=!d.running;
+    document.getElementById('btn-restart').disabled=!d.running;
+  }catch(e){
+    document.getElementById('status-pill').className='pill offline';
+    document.getElementById('status-pill').innerHTML='<span class="dot"></span> Error';
+  }
+}
+async function action(cmd){
+  const btn=document.getElementById(`btn-${cmd}`);
+  btn.disabled=true;btn.textContent='…';
+  try{await fetch(`/api/${cmd}`,{method:'POST'});setTimeout(poll,1500);}
+  catch(e){alert('Error: '+e.message);}
+  finally{setTimeout(()=>{btn.disabled=false;btn.textContent={start:'▶ Start',stop:'■ Stop',restart:'↺ Restart'}[cmd];},2000);}
+}
+function openGateway(){window.open(`${location.protocol}//${location.hostname}:18789`,'_blank');}
+poll();setInterval(poll,10000);
+</script>
+</body>
+</html>

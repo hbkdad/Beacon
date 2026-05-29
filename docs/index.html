@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SelfClawy — Self-hosted OpenClaw. No SaaS fees.</title>
+  <meta name="description" content="Deploy your own 24/7 OpenClaw AI assistant on any VPS. One command. Free forever. Open source.">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#09090b;--surface:#111113;--border:#1c1c20;--accent:#ff5a36;--text:#fafafa;--muted:#71717a;--mono:'Fira Mono',monospace}
+    html{scroll-behavior:smooth}
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+    nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;background:rgba(9,9,11,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+    .nav-logo{font-weight:800;font-size:1.15rem;display:flex;align-items:center;gap:.4rem}
+    .nav-logo .accent{color:var(--accent)}
+    .nav-links{display:flex;gap:2rem;list-style:none}
+    .nav-links a{color:var(--muted);text-decoration:none;font-size:.9rem;transition:color .15s}
+    .nav-links a:hover{color:var(--text)}
+    .nav-cta{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:.5rem 1.2rem;font-weight:600;font-size:.9rem;cursor:pointer;text-decoration:none}
+    .hero{text-align:center;padding:7rem 2rem 5rem;max-width:780px;margin:0 auto}
+    .hero-badge{display:inline-flex;align-items:center;gap:.5rem;background:rgba(255,90,54,.1);border:1px solid rgba(255,90,54,.3);color:var(--accent);border-radius:999px;padding:.3rem .9rem;font-size:.8rem;font-weight:600;margin-bottom:1.5rem}
+    h1{font-size:clamp(2.4rem,6vw,4rem);font-weight:900;line-height:1.1;letter-spacing:-.03em;margin-bottom:1.2rem}
+    h1 .accent{color:var(--accent)}
+    .hero-sub{font-size:1.15rem;color:var(--muted);max-width:520px;margin:0 auto 2.5rem;line-height:1.6}
+    .hero-actions{display:flex;justify-content:center;gap:1rem;flex-wrap:wrap}
+    .btn{padding:.75rem 1.75rem;border-radius:10px;border:none;font-size:1rem;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;transition:opacity .15s}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+    .code-hero{background:#0e0e12;border:1px solid var(--border);border-radius:14px;max-width:640px;margin:3rem auto 0;overflow:hidden;text-align:left}
+    .code-bar{display:flex;align-items:center;gap:6px;padding:.75rem 1rem;border-bottom:1px solid var(--border)}
+    .code-bar span{width:10px;height:10px;border-radius:50%}
+    .code-bar .r{background:#ef4444}.code-bar .y{background:#eab308}.code-bar .g{background:#22c55e}
+    .code-bar label{margin-left:auto;font-size:.72rem;color:var(--muted);font-family:var(--mono)}
+    pre{font-family:var(--mono);font-size:.88rem;color:#a5b4fc;padding:1.25rem 1.5rem;line-height:1.8;overflow-x:auto}
+    pre .prompt{color:var(--accent);user-select:none}
+    pre .cmd{color:#e2e8f0}
+    pre .comment{color:var(--muted)}
+    section{max-width:960px;margin:0 auto;padding:5rem 2rem}
+    .section-label{font-size:.75rem;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:.75rem}
+    h2{font-size:clamp(1.8rem,4vw,2.5rem);font-weight:800;letter-spacing:-.02em;margin-bottom:.75rem}
+    .section-sub{color:var(--muted);font-size:1.05rem;max-width:520px;line-height:1.6;margin-bottom:3rem}
+    .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.25rem}
+    .feature{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;transition:border-color .2s}
+    .feature:hover{border-color:rgba(255,90,54,.4)}
+    .feature-icon{font-size:1.5rem;margin-bottom:.75rem}
+    .feature h3{font-size:1rem;font-weight:700;margin-bottom:.4rem}
+    .feature p{font-size:.88rem;color:var(--muted);line-height:1.55}
+    .channels{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:3rem}
+    .ch-pill{background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:.35rem .9rem;font-size:.82rem}
+    .compare-table{width:100%;border-collapse:collapse;font-size:.9rem}
+    .compare-table th{padding:.75rem 1rem;text-align:left;color:var(--muted);font-weight:600;border-bottom:1px solid var(--border);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}
+    .compare-table td{padding:.85rem 1rem;border-bottom:1px solid var(--border)}
+    .compare-table tr:last-child td{border-bottom:none}
+    .tick{color:#22c55e}.cross{color:#ef4444}
+    .us{background:rgba(255,90,54,.05)}
+    .us td:first-child{font-weight:700;color:var(--accent)}
+    footer{border-top:1px solid var(--border);text-align:center;padding:2.5rem;color:var(--muted);font-size:.85rem}
+    footer a{color:var(--muted)}
+    footer a:hover{color:var(--text)}
+    @media(max-width:640px){.nav-links{display:none}}
+  </style>
+</head>
+<body>
+<nav>
+  <div class="nav-logo">🦞 Self<span class="accent">Clawy</span></div>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li><li><a href="#channels">Channels</a></li>
+    <li><a href="#compare">Compare</a></li>
+    <li><a href="https://docs.openclaw.ai" target="_blank">Docs</a></li>
+    <li><a href="https://github.com/hbkdad/selfclawy" target="_blank">GitHub</a></li>
+  </ul>
+  <a class="nav-cta" href="#quickstart">Deploy Free →</a>
+</nav>
+<div class="hero">
+  <div class="hero-badge">🦞 Free &amp; Open Source</div>
+  <h1>Your AI that works<br>while <span class="accent">you sleep.</span></h1>
+  <p class="hero-sub">Self-host OpenClaw on any VPS. Message it from WhatsApp, Telegram, Discord. It clears your inbox, manages your calendar, runs commands — 24/7. No SaaS fees. You own everything.</p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="#quickstart">Deploy in 2 minutes →</a>
+    <a class="btn btn-outline" href="https://github.com/hbkdad/selfclawy" target="_blank">⭐ GitHub</a>
+  </div>
+  <div class="code-hero" id="quickstart">
+    <div class="code-bar"><span class="r"></span><span class="y"></span><span class="g"></span><label>terminal</label></div>
+    <pre><span class="comment"># One-liner install</span>
+<span class="prompt">$ </span><span class="cmd">curl -fsSL https://raw.githubusercontent.com/hbkdad/selfclawy/main/scripts/install.sh | bash</span>
+
+<span class="comment"># Or Docker Compose</span>
+<span class="prompt">$ </span><span class="cmd">git clone https://github.com/hbkdad/selfclawy && cd selfclawy</span>
+<span class="prompt">$ </span><span class="cmd">cp .env.example .env && nano .env && docker compose up -d</span>
+
+<span class="comment"># Your lobster is live at http://YOUR_IP:18789 🦞</span></pre>
+  </div>
+</div>
+<section id="features">
+  <div class="section-label">Why SelfClawy</div>
+  <h2>Everything Clawy offers.<br>On your own server.</h2>
+  <p class="section-sub">useclawy.com charges monthly to host OpenClaw. SelfClawy gives you the same setup on hardware you control — free.</p>
+  <div class="features">
+    <div class="feature"><div class="feature-icon">⚡</div><h3>One-command deploy</h3><p>Single curl sets up Docker, pulls OpenClaw, configures channels, starts the gateway. Under 2 minutes.</p></div>
+    <div class="feature"><div class="feature-icon">🔒</div><h3>Your data, your server</h3><p>Memory files, conversation history, credentials stay on your VPS. Nothing leaves your machine.</p></div>
+    <div class="feature"><div class="feature-icon">📊</div><h3>Management dashboard</h3><p>Dark-mode web UI to start/stop/restart, stream live logs, check health — no CLI needed.</p></div>
+    <div class="feature"><div class="feature-icon">🔄</div><h3>Auto-updates</h3><p>Optional Watchtower keeps OpenClaw current, or run <code>docker compose pull</code> manually.</p></div>
+    <div class="feature"><div class="feature-icon">🤖</div><h3>Any AI model</h3><p>Claude, GPT-4o, Gemini, Mistral, Llama via Ollama — swap in .env, no code changes.</p></div>
+    <div class="feature"><div class="feature-icon">🛠️</div><h3>Fully hackable</h3><p>MIT licensed. Extend with OpenClaw skills from ClawHub, or write your own.</p></div>
+  </div>
+</section>
+<section id="channels">
+  <div class="section-label">Messaging Channels</div>
+  <h2>Message it from anywhere.</h2>
+  <p class="section-sub">OpenClaw connects to 20+ platforms out of the box.</p>
+  <div class="channels">
+    <div class="ch-pill">💬 Telegram</div><div class="ch-pill">📱 WhatsApp</div><div class="ch-pill">🎮 Discord</div>
+    <div class="ch-pill">🔵 Signal</div><div class="ch-pill">🍎 iMessage</div><div class="ch-pill">💼 Slack</div>
+    <div class="ch-pill">🟦 Microsoft Teams</div><div class="ch-pill">🟩 Matrix</div><div class="ch-pill">💬 Google Chat</div>
+    <div class="ch-pill">🟣 Nostr</div><div class="ch-pill">📺 Twitch</div><div class="ch-pill">+ more</div>
+  </div>
+</section>
+<section id="compare">
+  <div class="section-label">Comparison</div>
+  <h2>SelfClawy vs. Clawy</h2>
+  <p class="section-sub">Same OpenClaw power. Different business model.</p>
+  <table class="compare-table">
+    <thead><tr><th>Feature</th><th>🦞 SelfClawy</th><th>Clawy (useclawy.com)</th></tr></thead>
+    <tbody>
+      <tr class="us"><td>Price</td><td><span class="tick">✓</span> Free forever</td><td>Paid subscription</td></tr>
+      <tr><td>Setup time</td><td>~2 minutes</td><td>~1 minute</td></tr>
+      <tr class="us"><td>Data ownership</td><td><span class="tick">✓</span> Your server</td><td>Their cloud</td></tr>
+      <tr><td>Open source</td><td><span class="tick">✓</span> MIT</td><td><span class="cross">✗</span></td></tr>
+      <tr class="us"><td>Customizable</td><td><span class="tick">✓</span> Fully</td><td>Limited</td></tr>
+      <tr><td>Any AI model</td><td><span class="tick">✓</span> Claude, GPT, Gemini, local</td><td>Limited</td></tr>
+      <tr class="us"><td>Uptime SLA</td><td>You manage it</td><td><span class="tick">✓</span> Managed</td></tr>
+    </tbody>
+  </table>
+</section>
+<footer>
+  <p>SelfClawy is not affiliated with <a href="https://useclawy.com" target="_blank">Clawy</a> or OpenClaw.</p>
+  <p style="margin-top:.5rem">Built on <a href="https://github.com/openclaw/openclaw" target="_blank">OpenClaw</a> (MIT) — <a href="https://github.com/hbkdad/selfclawy" target="_blank">GitHub</a></p>
+</footer>
+</body>
+</html>
