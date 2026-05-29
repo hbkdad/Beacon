@@ -1,0 +1,34 @@
+name: Feature Request
+description: Suggest an idea
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: "## 🦞 Feature Request"
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Not already requested
+          required: true

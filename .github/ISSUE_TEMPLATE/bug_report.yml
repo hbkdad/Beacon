@@ -1,0 +1,72 @@
+name: Bug Report
+description: Something isn't working
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "## 🦞 Bug Report"
+
+  - type: input
+    id: version
+    attributes:
+      label: SelfClawy version / commit
+      placeholder: "e.g. main@abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Host OS
+      options:
+        - Ubuntu 22.04
+        - Ubuntu 24.04
+        - Debian 12
+        - Raspberry Pi OS
+        - Other Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai_provider
+    attributes:
+      label: AI provider
+      options:
+        - Anthropic (Claude)
+        - OpenAI
+        - Gemini
+        - Ollama (local)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: "What did you expect vs what actually happened?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (docker compose logs openclaw)
+      render: shell
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Not a duplicate
+          required: true
+        - label: On latest version
+          required: true
