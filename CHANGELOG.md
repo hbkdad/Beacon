@@ -1,7 +1,21 @@
 # Changelog
 
-All notable changes to SelfClawy will be documented here.
+All notable changes to Beacon (formerly SelfClawy) are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+
+---
+
+## [1.3.0] — 2026-05-30
+
+### Added
+- **Go cross-platform launcher** (`launcher/main.go`) — single binary (~6 MB) for Windows, macOS (amd64/arm64), and Linux. First run: checks Docker, downloads `docker-compose.yml`, prompts for API key, starts stack, opens browser. Background goroutine checks GitHub releases for updates.
+- **GitHub Actions release pipeline** (`.github/workflows/release.yml`) — on `git tag v*`: runs test suite, cross-compiles 4 binaries (`beacon-windows-amd64.exe`, `beacon-linux-amd64`, `beacon-darwin-amd64`, `beacon-darwin-arm64`), creates GitHub Release with CHANGELOG notes attached.
+- **`/api/version` endpoint** — returns current version and polls GitHub Releases API (1h TTL cache) for the latest; dashboard header shows version badge that turns emerald with ⬆ when an update is available.
+- **Brand SVG assets** — `docs/assets/logo.svg` (wordmark), `icon.svg` (64×64), `favicon.svg` (32×32), `og-image.svg` (1200×630 social preview).
+- **`CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1.
+- **`SECURITY.md`** — responsible disclosure policy, 72h response SLA, scope (auth bypass, RCE, SQLite injection, Docker socket escalation).
+- **`CODEOWNERS`** — @hbkdad as required reviewer on all paths.
+- **Updated `CONTRIBUTING.md`** — Go launcher section, full Beacon dev guide.
 
 ---
 
