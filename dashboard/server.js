@@ -11,6 +11,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const db = require('./db');
+const { parseLogLine } = require('./logParser');
 
 const app = express();
 const httpServer = createServer(app);
@@ -373,24 +374,38 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   let logStream = null;
   let fileStream = null;
+  let lineBuffer = '';
 
   async function subscribeToBackend(backend) {
     if (logStream) { try { logStream.destroy(); } catch (_) {} }
     if (fileStream) { try { fileStream.end(); } catch (_) {} }
+    lineBuffer = '';
     const cfg = BACKENDS[backend] || BACKENDS.openclaw;
     try {
       fileStream = getLogStream(backend);
       const container = docker.getContainer(cfg.container);
       logStream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 100 });
       logStream.on('data', (chunk) => {
-        const line = chunk.slice(8).toString('utf8');
-        socket.emit('log', line);
-        fileStream.write(line);
-        if (/error|fatal/i.test(line)) metrics.errorsTotal++;
-        const tm = line.match(TOKEN_RE);
-        if (tm) metrics.tokensToday += parseInt(tm[1], 10);
+        const raw = chunk.slice(8).toString('utf8');
+        socket.emit('log', raw);
+        fileStream.write(raw);
+        if (/error|fatal/i.test(raw)) metrics.errorsTotal++;
+        const tm = raw.match(TOKEN_RE);
+        if (tm) {
+          const n = parseInt(tm[1], 10);
+          metrics.tokensToday += n;
+          db.upsertDailyMetrics(new Date().toISOString().slice(0, 10), backend, { tokens: n });
+        }
+        lineBuffer += raw;
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop();
+        for (const line of lines) parseLogLine(line.trim(), backend, db.insertConversation);
       });
-      logStream.on('end', () => { socket.emit('log', '[stream ended]'); if (fileStream) fileStream.end(); });
+      logStream.on('end', () => {
+        if (lineBuffer.trim()) { parseLogLine(lineBuffer.trim(), backend, db.insertConversation); lineBuffer = ''; }
+        socket.emit('log', '[stream ended]');
+        if (fileStream) fileStream.end();
+      });
     } catch (err) { socket.emit('log', `[error: ${err.message}]`); }
   }
 

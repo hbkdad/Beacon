@@ -478,3 +478,87 @@ describe('POST /api/skills/install', () => {
     expect(r.status).toBe(400);
   });
 });
+
+// ── Unit tests for log line parser ────────────────────────────────────────────
+describe('parseLogLine (logParser.js)', () => {
+  const { parseLogLine } = require('../logParser');
+
+  function capture(line) {
+    const rows = [];
+    parseLogLine(line, 'openclaw', (data) => rows.push(data));
+    return rows;
+  }
+
+  it('ignores short/empty lines', () => {
+    expect(capture('')).toHaveLength(0);
+    expect(capture('ok')).toHaveLength(0);
+    expect(capture('   ')).toHaveLength(0);
+  });
+
+  it('parses JSON structured log — user turn', () => {
+    const line = '{"role":"user","channel":"telegram","user":"alice","message":"Hello bot","tokens":0}';
+    const rows = capture(line);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].role).toBe('user');
+    expect(rows[0].channel).toBe('telegram');
+    expect(rows[0].user).toBe('alice');
+    expect(rows[0].message).toBe('Hello bot');
+  });
+
+  it('parses JSON structured log — assistant turn with tokens', () => {
+    const line = 'INFO {"role":"assistant","channel":"discord","message":"Hi there!","tokens":42,"model":"claude-sonnet-4-6"}';
+    const rows = capture(line);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].role).toBe('assistant');
+    expect(rows[0].tokens).toBe(42);
+    expect(rows[0].model).toBe('claude-sonnet-4-6');
+  });
+
+  it('ignores JSON without role or message', () => {
+    expect(capture('{"event":"startup","pid":1234}')).toHaveLength(0);
+    expect(capture('{"role":"user"}')).toHaveLength(0);
+  });
+
+  it('parses bracket channel format — user message', () => {
+    const line = '[telegram:12345] user#67890: Hello, what is the weather today?';
+    const rows = capture(line);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].role).toBe('user');
+    expect(rows[0].channel).toBe('telegram');
+    expect(rows[0].message).toBe('Hello, what is the weather today?');
+  });
+
+  it('parses bracket channel format — bot response', () => {
+    const line = '[discord:srv1] bot: The weather today is sunny and 22°C.';
+    const rows = capture(line);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].role).toBe('assistant');
+    expect(rows[0].user).toBeNull();
+  });
+
+  it('parses incoming keyword format', () => {
+    const line = 'incoming telegram user123 | Hello from Telegram';
+    const rows = capture(line);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].role).toBe('user');
+  });
+
+  it('parses outgoing keyword format', () => {
+    const line = 'outgoing telegram | Here is your answer from the bot';
+    const rows = capture(line);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].role).toBe('assistant');
+  });
+
+  it('truncates messages to 4000 chars', () => {
+    const long = 'x'.repeat(5000);
+    const line = `[telegram] user123: ${long}`;
+    const rows = capture(line);
+    if (rows.length > 0) expect(rows[0].message.length).toBeLessThanOrEqual(4000);
+  });
+
+  it('returns false for non-matching lines', () => {
+    const result = parseLogLine('[2026-05-30] Server started on port 18789', 'openclaw', () => {});
+    expect(result).toBe(false);
+  });
+});
