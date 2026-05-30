@@ -261,6 +261,7 @@
   <div class="logo"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" style="color:var(--accent);flex-shrink:0"><line x1="10" y1="18" x2="10" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="7" y1="18" x2="13" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="11" r="1.5" fill="currentColor"/><path d="M7.5 10.5Q10 7.5 12.5 10.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><path d="M5 9Q10 3 15 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".5"/></svg><div style="color:var(--text)">beacon</div></div>
   <div class="header-right">
     <div id="status-pill" class="pill loading"><span class="dot"></span> Checking…</div>
+    <a id="version-badge" href="https://github.com/hbkdad/selfclawy/releases" target="_blank" title="Check for updates" style="display:none;font-size:.72rem;color:var(--muted);text-decoration:none;padding:.2rem .5rem;border:1px solid var(--border);border-radius:6px;line-height:1.4"></a>
     <div style="position:relative">
       <button class="icon-btn" id="notif-btn" onclick="toggleNotifications()" title="Notifications">🔔<span class="badge" id="notif-badge" style="display:none">0</span></button>
       <div class="notif-dropdown" id="notif-dropdown">
@@ -1310,6 +1311,25 @@ function toast(msg) {
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#notif-btn') && !e.target.closest('#notif-dropdown')) closeNotifications();
 });
+
+// ── Version badge ─────────────────────────────────────────────────────────────
+async function checkVersion() {
+  try {
+    const d = await apiFetch('/api/version');
+    const badge = document.getElementById('version-badge');
+    if (!badge) return;
+    badge.style.display = 'inline-block';
+    if (d.updateAvailable) {
+      badge.textContent = `v${d.current} → v${d.latest} ⬆`;
+      badge.style.color = 'var(--accent)';
+      badge.style.borderColor = 'rgba(16,185,129,.4)';
+      badge.title = `Update available: v${d.latest}. Click to download.`;
+    } else {
+      badge.textContent = `v${d.current}`;
+    }
+  } catch (_) {}
+}
+setTimeout(checkVersion, 2000);
 </script>
 </body>
 </html>

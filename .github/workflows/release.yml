@@ -5,54 +5,68 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  release:
+  test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
           cache-dependency-path: dashboard/package-lock.json
-
-      - name: Install dependencies
-        working-directory: dashboard
-        run: npm ci --prefer-offline
-
-      - name: Run tests
-        working-directory: dashboard
-        run: npm test
+      - run: cd dashboard && npm ci --prefer-offline && npm test
         env:
           AUTH_MODE: basic
           DASHBOARD_PASSWORD: testpass
 
-      - name: Extract changelog entry
-        id: changelog
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: launcher/go.mod
+
+      - name: Build binaries
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          cd launcher
+          VER="${{ github.ref_name }}"
+          LDFLAGS="-s -w -X main.Version=${VER#v}"
+          GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o ../dist/beacon-windows-amd64.exe .
+          GOOS=linux   GOARCH=amd64 go build -ldflags="$LDFLAGS" -o ../dist/beacon-linux-amd64   .
+          GOOS=darwin  GOARCH=amd64 go build -ldflags="$LDFLAGS" -o ../dist/beacon-darwin-amd64  .
+          GOOS=darwin  GOARCH=arm64 go build -ldflags="$LDFLAGS" -o ../dist/beacon-darwin-arm64  .
+          ls -lh ../dist/
+
+      - name: Extract changelog notes
+        id: notes
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
           NOTES=$(awk "/^## \[$VERSION\]/,/^## \[/" CHANGELOG.md | head -n -2 | tail -n +2)
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "body<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: actions/github-script@v7
+        uses: softprops/action-gh-release@v2
         with:
-          script: |
-            const { data } = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: context.ref.replace('refs/tags/', ''),
-              name: `SelfClawy ${context.ref.replace('refs/tags/', '')}`,
-              body: process.env.RELEASE_NOTES,
-              draft: false,
-              prerelease: false,
-            });
-            console.log('Release created:', data.html_url);
-        env:
-          RELEASE_NOTES: ${{ steps.changelog.outputs.notes }}
+          name: "Beacon ${{ github.ref_name }}"
+          body: ${{ steps.notes.outputs.body }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/beacon-windows-amd64.exe
+            dist/beacon-linux-amd64
+            dist/beacon-darwin-amd64
+            dist/beacon-darwin-arm64

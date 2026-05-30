@@ -703,4 +703,24 @@ app.post('/api/restore', auth, verifyCsrf, (req, res) => {
   res.json({ ok: false, error: 'Restore via: docker run --rm -v <volume>:/data alpine tar xzf - < backup.tar.gz' });
 });
 
+// ── Version / update check ────────────────────────────────────────────────────
+const pkg = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'package.json'), 'utf8'));
+let _latestCache = null;
+let _latestFetchedAt = 0;
+
+app.get('/api/version', auth, async (req, res) => {
+  const current = pkg.version;
+  const now = Date.now();
+  if (!_latestCache || now - _latestFetchedAt > 3600_000) {
+    try {
+      const r = await fetch('https://api.github.com/repos/hbkdad/selfclawy/releases/latest',
+        { headers: { 'User-Agent': 'beacon-dashboard' }, signal: AbortSignal.timeout(5000) });
+      const j = await r.json();
+      _latestCache = (j.tag_name || '').replace(/^v/, '');
+      _latestFetchedAt = now;
+    } catch (_) { _latestCache = null; }
+  }
+  res.json({ current, latest: _latestCache, updateAvailable: _latestCache && _latestCache !== current });
+});
+
 httpServer.listen(PORT, () => console.log(`SelfClawy dashboard running at http://localhost:${PORT}`));
