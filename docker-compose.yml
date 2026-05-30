@@ -32,22 +32,95 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  hermes:
+    build:
+      context: ./hermes
+      dockerfile: Dockerfile
+    container_name: hermes
+    profiles: [hermes]
+    restart: unless-stopped
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - DISCORD_TOKEN=${DISCORD_TOKEN:-}
+      - HERMES_PORT=${HERMES_PORT:-8080}
+      - HERMES_SECRET=${HERMES_SECRET:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+    volumes:
+      - hermes_data:/root/.hermes
+    ports:
+      - "${HERMES_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    profiles: [ollama]
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   dashboard:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
-    container_name: selfclawy-dashboard
+    container_name: beacon-dashboard
     restart: unless-stopped
     depends_on:
       - openclaw
     environment:
       - OPENCLAW_URL=http://openclaw:18789
+      - HERMES_URL=http://hermes:8080
+      - OLLAMA_URL=http://ollama:11434
       - DASHBOARD_PORT=${DASHBOARD_PORT:-3001}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+      - AUTH_MODE=${AUTH_MODE:-basic}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - OPENCLAW_CONFIG_PATH=/config/openclaw.json
+      - HERMES_CONFIG_PATH=/config/hermes.yaml
+      - LOG_DIR=/data/logs
+      - STATE_FILE=/data/state.json
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config/openclaw.json:/config/openclaw.json
+      - ./config/hermes.yaml:/config/hermes.yaml
+      - selfclawy_data:/data
     ports:
       - "${DASHBOARD_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/setup/status',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     logging:
       driver: "json-file"
       options:
@@ -56,7 +129,7 @@ services:
 
   watchtower:
     image: containrrr/watchtower
-    container_name: selfclawy-updater
+    container_name: beacon-updater
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -69,4 +142,10 @@ services:
 
 volumes:
   openclaw_data:
+    driver: local
+  hermes_data:
+    driver: local
+  ollama_data:
+    driver: local
+  selfclawy_data:
     driver: local

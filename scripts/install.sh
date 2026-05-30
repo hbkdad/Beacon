@@ -13,7 +13,18 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 REPO_URL="https://github.com/hbkdad/selfclawy"
-INSTALL_DIR="$HOME/selfclawy"
+INSTALL_DIR="${SELFCLAWY_DIR:-$HOME/selfclawy}"
+
+# ── Headless mode ─────────────────────────────────────────────────────────────
+# Set these env vars for zero-interaction install:
+#   SC_API_KEY      — Anthropic API key
+#   SC_PASSWORD     — Dashboard password
+#   SC_TG_TOKEN     — Telegram bot token
+#   SC_PHONE        — Allowed phone (E.164)
+#   SC_BACKENDS     — "" | "hermes" | "ollama" | "hermes,ollama"
+#   SC_WEBHOOK_URL  — Alert webhook URL
+HEADLESS=false
+[[ -n "${SC_API_KEY}${SC_PASSWORD}${SC_BACKENDS}" ]] && HEADLESS=true
 
 print_banner() {
   echo -e "${CYAN}"
@@ -77,31 +88,81 @@ configure() {
 
   cp .env.example .env
 
-  echo ""
-  echo -e "${BOLD}Let's configure your instance:${NC}"
-  echo ""
-
-  read -rp "  Anthropic API key (sk-ant-...): " api_key
-  if [[ -n "$api_key" ]]; then
-    sed -i "s|ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=$api_key|" .env
-  fi
-
-  read -rp "  Telegram bot token (leave blank to skip): " tg_token
-  if [[ -n "$tg_token" ]]; then
-    sed -i "s|TELEGRAM_TOKEN=.*|TELEGRAM_TOKEN=$tg_token|" .env
-  fi
-
-  read -rp "  Your phone number in E.164 format (e.g. +15555550123): " phone
-  if [[ -n "$phone" ]]; then
-    sed -i "s|OPENCLAW_ALLOW_FROM=.*|OPENCLAW_ALLOW_FROM=$phone|" .env
-  fi
-
+  # ── Auto-generate secrets ──────────────────────────────────────────────────
   secret=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p)
   sed -i "s|OPENCLAW_SECRET=.*|OPENCLAW_SECRET=$secret|" .env
 
-  read -rp "  Dashboard password (default: changeme): " dash_pass
-  if [[ -n "$dash_pass" ]]; then
-    sed -i "s|DASHBOARD_PASSWORD=.*|DASHBOARD_PASSWORD=$dash_pass|" .env
+  if [[ "$HEADLESS" == "true" ]]; then
+    # Non-interactive mode — use SC_* env vars
+    echo -e "${CYAN}Headless mode — using environment variables${NC}"
+    [[ -n "$SC_API_KEY" ]]     && sed -i "s|ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=$SC_API_KEY|" .env
+    [[ -n "$SC_PASSWORD" ]]    && sed -i "s|DASHBOARD_PASSWORD=.*|DASHBOARD_PASSWORD=$SC_PASSWORD|" .env
+    [[ -n "$SC_TG_TOKEN" ]]    && sed -i "s|TELEGRAM_TOKEN=.*|TELEGRAM_TOKEN=$SC_TG_TOKEN|" .env
+    [[ -n "$SC_PHONE" ]]       && sed -i "s|OPENCLAW_ALLOW_FROM=.*|OPENCLAW_ALLOW_FROM=$SC_PHONE|" .env
+    [[ -n "$SC_WEBHOOK_URL" ]] && sed -i "s|ALERT_WEBHOOK_URL=.*|ALERT_WEBHOOK_URL=$SC_WEBHOOK_URL|" .env
+    compose_profiles="${SC_BACKENDS:-}"
+  else
+    echo ""
+    echo -e "${BOLD}Let's configure your instance:${NC}"
+    echo ""
+
+    read -rp "  Anthropic API key (sk-ant-...): " api_key
+    [[ -n "$api_key" ]] && sed -i "s|ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=$api_key|" .env
+
+    read -rp "  Telegram bot token (leave blank to skip): " tg_token
+    [[ -n "$tg_token" ]] && sed -i "s|TELEGRAM_TOKEN=.*|TELEGRAM_TOKEN=$tg_token|" .env
+
+    read -rp "  Your phone number in E.164 format (e.g. +15555550123): " phone
+    [[ -n "$phone" ]] && sed -i "s|OPENCLAW_ALLOW_FROM=.*|OPENCLAW_ALLOW_FROM=$phone|" .env
+
+    read -rp "  Dashboard password (leave blank for 'changeme'): " dash_pass
+    [[ -n "$dash_pass" ]] && sed -i "s|DASHBOARD_PASSWORD=.*|DASHBOARD_PASSWORD=$dash_pass|" .env
+
+    read -rp "  Enable multi-user JWT auth? (y/N): " use_jwt
+    if [[ "$use_jwt" =~ ^[Yy]$ ]]; then
+      sed -i "s|AUTH_MODE=.*|AUTH_MODE=jwt|" .env
+      jwt_secret=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p)
+      sed -i "s|JWT_SECRET=.*|JWT_SECRET=$jwt_secret|" .env
+      echo -e "  ${GREEN}✓ JWT auth enabled${NC}"
+    fi
+
+    read -rp "  Alert webhook URL (Discord/Telegram, leave blank to skip): " webhook_url
+    [[ -n "$webhook_url" ]] && sed -i "s|ALERT_WEBHOOK_URL=.*|ALERT_WEBHOOK_URL=$webhook_url|" .env
+
+    echo ""
+    echo -e "${BOLD}  Optional backends (adds to docker-compose):${NC}"
+    echo -e "    a) OpenClaw only  — lightweight Node.js gateway (default)"
+    echo -e "    b) + Hermes Agent — Python gateway with memory, skills, cron (~180s startup)"
+    echo -e "    c) + Ollama       — local LLM runner; zero API cost (needs 8+ GB RAM)"
+    echo -e "    d) Both Hermes + Ollama"
+    read -rp "  Your choice [a]: " backend_choice
+
+    case "$backend_choice" in
+      b|B) compose_profiles="hermes" ;;
+      c|C) compose_profiles="ollama" ;;
+      d|D) compose_profiles="hermes,ollama" ;;
+      *) compose_profiles="" ;;
+    esac
+  fi
+
+  if [[ -n "$compose_profiles" ]]; then
+    sed -i "s|COMPOSE_PROFILES=.*|COMPOSE_PROFILES=$compose_profiles|" .env
+    echo -e "  ${GREEN}✓ Profiles: $compose_profiles${NC}"
+  fi
+
+  if [[ "$compose_profiles" == *"hermes"* ]]; then
+    hermes_secret=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p)
+    sed -i "s|HERMES_SECRET=.*|HERMES_SECRET=$hermes_secret|" .env
+    if [[ "$compose_profiles" == *"ollama"* ]]; then
+      sed -i "s|OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=http://ollama:11434|" .env
+      echo -e "  ${GREEN}✓ Hermes configured to use Ollama for local models${NC}"
+    fi
+    echo -e "  ${YELLOW}Note: Hermes Agent takes ~3 min to install on first start${NC}"
+  fi
+
+  if [[ "$compose_profiles" == *"ollama"* ]] && command -v nvidia-smi &>/dev/null; then
+    echo -e "  ${GREEN}✓ NVIDIA GPU detected — for GPU acceleration, use:${NC}"
+    echo -e "  ${CYAN}  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d${NC}"
   fi
 
   echo ""
@@ -124,8 +185,16 @@ print_success() {
   echo -e "${GREEN}${BOLD}  SelfClawy is running! 🦞${NC}"
   echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
-  echo -e "  OpenClaw dashboard:  ${CYAN}http://$server_ip:18789${NC}"
+  echo -e "  OpenClaw gateway:    ${CYAN}http://$server_ip:18789${NC}"
   echo -e "  SelfClawy dashboard: ${CYAN}http://$server_ip:3001${NC}"
+  if grep -q "hermes" "$INSTALL_DIR/.env" 2>/dev/null && grep -q "COMPOSE_PROFILES=.*hermes" "$INSTALL_DIR/.env" 2>/dev/null; then
+    hermes_port=$(grep "^HERMES_PORT=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "8080")
+    echo -e "  Hermes Agent UI:     ${CYAN}http://$server_ip:${hermes_port:-8080}${NC}"
+  fi
+  if grep -q "COMPOSE_PROFILES=.*ollama" "$INSTALL_DIR/.env" 2>/dev/null; then
+    ollama_port=$(grep "^OLLAMA_PORT=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "11434")
+    echo -e "  Ollama API:          ${CYAN}http://$server_ip:${ollama_port:-11434}${NC}"
+  fi
   echo ""
   echo -e "  ${BOLD}Next steps:${NC}"
   echo -e "  1. Open the dashboard and verify the gateway is running"
