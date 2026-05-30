@@ -351,6 +351,24 @@ app.post('/api/backup', auth, verifyCsrf, (req, res) => {
   child.on('error', (err) => res.status(500).end(err.message));
 });
 
+// ── Socket.io auth middleware ─────────────────────────────────────────────────
+io.use((socket, next) => {
+  if (AUTH_MODE === 'jwt') {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error('Unauthorized'));
+    try { jwt.verify(token, JWT_SECRET); next(); } catch { next(new Error('Unauthorized')); }
+  } else {
+    const authHeader = socket.handshake.headers?.authorization || '';
+    const b64 = authHeader.startsWith('Basic ') ? authHeader.slice(6) : '';
+    if (!b64) return next(new Error('Unauthorized'));
+    try {
+      const [, pass] = Buffer.from(b64, 'base64').toString().split(':');
+      if (pass === PASSWORD) next();
+      else next(new Error('Unauthorized'));
+    } catch { next(new Error('Unauthorized')); }
+  }
+});
+
 // ── Socket.io: live log streaming (backend-aware) ─────────────────────────────
 io.on('connection', (socket) => {
   let logStream = null;

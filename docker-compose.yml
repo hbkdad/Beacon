@@ -115,6 +115,12 @@ services:
       - selfclawy_data:/data
     ports:
       - "${DASHBOARD_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/setup/status',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     logging:
       driver: "json-file"
       options:

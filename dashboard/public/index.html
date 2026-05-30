@@ -706,7 +706,7 @@ async function switchBackend(backend) {
 let socket;
 const logEl = document.getElementById('log');
 function initSocket() {
-  socket = io();
+  socket = io({ auth: { token: authToken } });
   socket.emit('subscribe-logs');
   socket.on('log', (line) => {
     const s = document.createElement('span');
@@ -855,10 +855,10 @@ async function loadOllamaModels() {
     const data = await r.json();
     const models = data.models || [];
     document.getElementById('ollama-model-list').innerHTML = models.length
-      ? models.map(m => `<li><span>${m.name}</span><span style="color:var(--muted);font-size:.7rem">${(m.size/1e9).toFixed(1)} GB</span></li>`).join('')
+      ? models.map(m => `<li><span>${escHtml(m.name)}</span><span style="color:var(--muted);font-size:.7rem">${(m.size/1e9).toFixed(1)} GB</span></li>`).join('')
       : '<li class="empty">No models pulled yet</li>';
     const optgroup = document.getElementById('ollama-model-opts');
-    if (models.length) optgroup.innerHTML = models.map(m => `<option value="${m.name}|ollama">${m.name} (local)</option>`).join('');
+    if (models.length) optgroup.innerHTML = models.map(m => `<option value="${escHtml(m.name)}|ollama">${escHtml(m.name)} (local)</option>`).join('');
   } catch(_) {}
 }
 async function pullModel() {
