@@ -1,13 +1,18 @@
-# Beacon
+<div align="center">
+  <img src="docs/assets/logo.svg" alt="Beacon" height="48"/>
+  <br/><br/>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-10b981.svg)](LICENSE)
 [![CI](https://github.com/hbkdad/selfclawy/actions/workflows/ci.yml/badge.svg)](https://github.com/hbkdad/selfclawy/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-49%20passing-brightgreen)](dashboard/tests/api.test.js)
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20the%20project-10b981?logo=ko-fi&logoColor=white)](https://ko-fi.com/hbkcustomsinc)
+[![Tests](https://img.shields.io/badge/tests-49%20passing-10b981)](dashboard/tests/api.test.js)
+[![Release](https://img.shields.io/github/v/release/hbkdad/selfclawy?color=10b981)](https://github.com/hbkdad/selfclawy/releases/latest)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-10b981?logo=ko-fi&logoColor=white)](https://ko-fi.com/hbkcustomsinc)
 
-> **One control plane for OpenClaw + Hermes Agent + Ollama. Self-hosted, zero subscriptions.**
+**One control plane for OpenClaw + Hermes Agent + Ollama. Self-hosted, zero subscriptions.**
 
-AI that works for you, 24/7 — on your server, through your channels, on your terms. Setup wizard gets you live in under 5 minutes with zero SSH.
+AI that works for you, 24/7 — on your server, through your channels, on your terms.
+
+</div>
 
 **[Landing Page](https://hbkdad.github.io/selfclawy/docs/)** · [Setup Guide](docs/SETUP.md) · [Issues](https://github.com/hbkdad/selfclawy/issues) · [☕ Ko-fi](https://ko-fi.com/hbkcustomsinc)
 
