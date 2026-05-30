@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SelfClawy Dashboard</title>
+  <title>Beacon</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg:#0d0f14;--surface:#13161e;--border:#1e2330;--accent:#ff5a36;--accent-dim:rgba(255,90,54,0.12);
+      --bg:#060a0f;--surface:#0d1117;--border:#1a2332;--accent:#10b981;--accent-dim:rgba(16,185,129,0.12);
       --green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#eab308;--blue:#60a5fa;--blue-dim:rgba(96,165,250,0.12);
-      --red:#f87171;--text:#e2e8f0;--muted:#64748b;--mono:'Fira Mono',monospace;--shadow:0 2px 12px rgba(0,0,0,.4);
+      --red:#f87171;--text:#e2e8f0;--muted:#64748b;--mono:'Fira Mono',monospace;--shadow:0 2px 12px rgba(0,0,0,.5);
       --nav-h:56px
     }
     [data-theme="light"]{
-      --bg:#f1f5f9;--surface:#ffffff;--border:#e2e8f0;--accent:#e04a2a;--accent-dim:rgba(224,74,42,0.1);
+      --bg:#f8fafc;--surface:#ffffff;--border:#e2e8f0;--accent:#059669;--accent-dim:rgba(5,150,105,0.1);
       --green:#16a34a;--green-dim:rgba(22,163,74,0.1);--yellow:#ca8a04;--blue:#2563eb;--blue-dim:rgba(37,99,235,0.1);
       --red:#dc2626;--text:#1e293b;--muted:#94a3b8;--shadow:0 2px 12px rgba(0,0,0,.08)
     }
@@ -175,7 +175,7 @@
     .skills-meta{font-size:.75rem;color:var(--muted);white-space:nowrap}
     .skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.85rem}
     .skill-card{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:1rem;display:flex;flex-direction:column;gap:.4rem;transition:border-color .15s,transform .12s}
-    .skill-card:hover{border-color:rgba(255,90,54,.35);transform:translateY(-1px)}
+    .skill-card:hover{border-color:rgba(16,185,129,.35);transform:translateY(-1px)}
     .skill-card.installed{border-color:rgba(34,197,94,.4)}
     .skill-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem}
     .skill-name{font-weight:700;font-size:.88rem;font-family:var(--mono);color:var(--accent)}
@@ -245,7 +245,7 @@
 <!-- Login -->
 <div id="login-screen" style="display:none">
   <div class="login-card">
-    <div class="login-logo"><span style="font-size:1.6rem">🦞</span><div>Self<span>Clawy</span></div></div>
+    <div class="login-logo"><svg width="24" height="24" viewBox="0 0 20 20" fill="none" style="color:var(--accent);flex-shrink:0"><line x1="10" y1="18" x2="10" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="7" y1="18" x2="13" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="11" r="1.5" fill="currentColor"/><path d="M7.5 10.5Q10 7.5 12.5 10.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><path d="M5 9Q10 3 15 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".5"/></svg><div style="color:var(--text)">beacon</div></div>
     <h2>Sign in to your dashboard</h2>
     <div class="field"><label>Username</label><input id="l-user" type="text" value="admin" autocomplete="username"></div>
     <div class="field"><label>Password</label><input id="l-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()"></div>
@@ -258,7 +258,7 @@
 <div id="app" style="display:none">
 
 <header>
-  <div class="logo"><span style="font-size:1.35rem">🦞</span><div>Self<span>Clawy</span></div></div>
+  <div class="logo"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" style="color:var(--accent);flex-shrink:0"><line x1="10" y1="18" x2="10" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="7" y1="18" x2="13" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="11" r="1.5" fill="currentColor"/><path d="M7.5 10.5Q10 7.5 12.5 10.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><path d="M5 9Q10 3 15 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".5"/></svg><div style="color:var(--text)">beacon</div></div>
   <div class="header-right">
     <div id="status-pill" class="pill loading"><span class="dot"></span> Checking…</div>
     <div style="position:relative">
@@ -389,7 +389,7 @@
     <div class="links">
       <a class="link-card" href="#" onclick="openGateway();return false"><span class="link-icon">🌐</span><div><div class="link-label" id="gateway-label">OpenClaw UI</div><div class="link-sub">Open gateway</div></div></a>
       <a class="link-card" href="https://docs.openclaw.ai" target="_blank"><span class="link-icon">📖</span><div><div class="link-label">Docs</div><div class="link-sub">docs.openclaw.ai</div></div></a>
-      <a class="link-card" href="https://github.com/hbkdad/selfclawy" target="_blank"><span class="link-icon">🐙</span><div><div class="link-label">GitHub</div><div class="link-sub">hbkdad/selfclawy</div></div></a>
+      <a class="link-card" href="https://github.com/hbkdad/selfclawy" target="_blank"><span class="link-icon">🐙</span><div><div class="link-label">GitHub</div><div class="link-sub">hbkdad/beacon</div></div></a>
     </div>
   </div>
 

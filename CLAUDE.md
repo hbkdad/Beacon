@@ -1,7 +1,7 @@
-# SelfClawy — Project Memory
+# Beacon — Project Memory
 
 ## What This Is
-SelfClawy is a self-hosted Docker management dashboard for the OpenClaw AI ecosystem. It wraps three optional backends in a unified Node.js/HTML web UI:
+Beacon (formerly SelfClawy) is a self-hosted AI control plane — a Docker management dashboard for the OpenClaw ecosystem. It wraps three optional backends in a unified Node.js/HTML web UI:
 - **OpenClaw** (always on): Node.js AI gateway, 50+ messaging channels, ClawHub skills (5,700+), port 18789
 - **Hermes Agent** (optional, profile `hermes`): Python self-improving agent, 23 platforms, port 8080
 - **Ollama** (optional, profile `ollama`): Local LLM runner, port 11434
@@ -10,7 +10,7 @@ Users manage all three backends from a single dashboard at port 3001.
 
 ## Repo Layout
 ```
-selfclawy/
+beacon/ (repo: selfclawy)
 ├── dashboard/
 │   ├── server.js          # Express API + Socket.io (21+ routes)
 │   ├── db.js              # SQLite layer (better-sqlite3)
@@ -19,7 +19,7 @@ selfclawy/
 │   │   └── setup.html     # First-run wizard (5 steps)
 │   ├── tests/
 │   │   └── api.test.js    # Jest+Supertest, 31 tests
-│   └── package.json       # v1.2.0
+│   └── package.json       # v1.3.0
 ├── hermes/
 │   ├── Dockerfile         # python:3.11-slim + NousResearch/hermes-agent
 │   └── entrypoint.sh      # Writes ~/.hermes/config.yaml from env, runs hermes gateway
@@ -38,7 +38,7 @@ selfclawy/
 
 ## Key Architecture Decisions
 - **State file** (`/data/state.json`): tracks `activeBackend` and `setup_complete`
-- **SQLite DB** (`/data/selfclawy.db`): conversation history, metrics, audit log, MCP servers, routing rules, presets, notifications
+- **SQLite DB** (`/data/beacon.db`): conversation history, metrics, audit log, MCP servers, routing rules, presets, notifications
 - **Docker Compose profiles**: `hermes`, `ollama`, `autoupdate` — controlled by `COMPOSE_PROFILES` env var
 - **Auth modes**: `basic` (HTTP Basic Auth, default) or `jwt` (multi-user with bcrypt+JWT)
 - **CSRF**: double-submit cookie pattern on all POST/DELETE routes

@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SelfClawy Setup</title>
+  <title>Beacon — Setup</title>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg:#0d0f14;--surface:#13161e;--border:#1e2330;--accent:#ff5a36;
-      --accent-dim:rgba(255,90,54,0.12);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);
+      --bg:#060a0f;--surface:#0d1117;--border:#1a2332;--accent:#10b981;
+      --accent-dim:rgba(16,185,129,0.12);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);
       --text:#e2e8f0;--muted:#64748b;--shadow:0 4px 24px rgba(0,0,0,.5)
     }
     body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
@@ -117,8 +117,8 @@
 <body>
 <div class="wizard">
   <div class="wiz-header">
-    <div class="wiz-logo">🦞</div>
-    <div class="wiz-logo-text">Self<span>Clawy</span></div>
+    <div class="wiz-logo"><svg width="40" height="40" viewBox="0 0 20 20" fill="none" style="color:var(--accent)"><line x1="10" y1="18" x2="10" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="7" y1="18" x2="13" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="11" r="1.5" fill="currentColor"/><path d="M7.5 10.5Q10 7.5 12.5 10.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><path d="M5 9Q10 3 15 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".5"/></svg></div>
+    <div class="wiz-logo-text" style="color:var(--text)">beacon</div>
   </div>
 
   <div class="steps" id="steps-indicator">
@@ -136,7 +136,7 @@
   <div class="card">
     <!-- Step 0: Welcome & Password -->
     <div class="step-panel active" id="step-0">
-      <h2>Welcome to SelfClawy 🦞</h2>
+      <h2>Welcome to Beacon</h2>
       <p class="sub">Let's get you set up in under 2 minutes. First, secure your dashboard.</p>
       <div class="field">
         <label>Admin Password</label>
@@ -282,7 +282,7 @@
     <div class="step-panel" id="step-4">
       <div class="done-icon">🎉</div>
       <h2 style="text-align:center">You're all set!</h2>
-      <p class="sub" style="text-align:center">SelfClawy is configured and ready. Here's your setup summary.</p>
+      <p class="sub" style="text-align:center">Beacon is configured and ready. Here's your setup summary.</p>
       <div class="done-summary" id="done-summary"></div>
       <div class="btn-row">
         <button class="btn-success" onclick="finish()">Open Dashboard →</button>

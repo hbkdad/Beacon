@@ -91,7 +91,7 @@ services:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
-    container_name: selfclawy-dashboard
+    container_name: beacon-dashboard
     restart: unless-stopped
     depends_on:
       - openclaw
@@ -129,7 +129,7 @@ services:
 
   watchtower:
     image: containrrr/watchtower
-    container_name: selfclawy-updater
+    container_name: beacon-updater
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

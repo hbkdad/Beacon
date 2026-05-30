@@ -1,7 +1,7 @@
 {
-  "name": "selfclawy-dashboard",
-  "version": "1.2.0",
-  "description": "Self-hosted management dashboard for OpenClaw",
+  "name": "beacon-dashboard",
+  "version": "1.3.0",
+  "description": "Beacon — self-hosted AI control plane for OpenClaw, Hermes Agent, and Ollama",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
