@@ -104,6 +104,20 @@ configure() {
     sed -i "s|DASHBOARD_PASSWORD=.*|DASHBOARD_PASSWORD=$dash_pass|" .env
   fi
 
+  read -rp "  Enable multi-user JWT auth? (y/N): " use_jwt
+  if [[ "$use_jwt" =~ ^[Yy]$ ]]; then
+    sed -i "s|AUTH_MODE=.*|AUTH_MODE=jwt|" .env
+    jwt_secret=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p)
+    sed -i "s|JWT_SECRET=.*|JWT_SECRET=$jwt_secret|" .env
+    echo -e "  ${GREEN}✓ JWT auth enabled${NC}"
+  fi
+
+  read -rp "  Alert webhook URL (Discord/Telegram, leave blank to skip): " webhook_url
+  if [[ -n "$webhook_url" ]]; then
+    sed -i "s|ALERT_WEBHOOK_URL=.*|ALERT_WEBHOOK_URL=$webhook_url|" .env
+    echo -e "  ${GREEN}✓ Alert webhook configured${NC}"
+  fi
+
   echo ""
   echo -e "${GREEN}✓ .env configured${NC}"
 }

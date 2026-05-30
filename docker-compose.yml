@@ -44,8 +44,15 @@ services:
       - OPENCLAW_URL=http://openclaw:18789
       - DASHBOARD_PORT=${DASHBOARD_PORT:-3001}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+      - AUTH_MODE=${AUTH_MODE:-basic}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - OPENCLAW_CONFIG_PATH=/config/openclaw.json
+      - LOG_DIR=/data/logs
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/openclaw.json:/config/openclaw.json
+      - logs_data:/data/logs
     ports:
       - "${DASHBOARD_PORT:-3001}:3001"
     logging:
@@ -69,4 +76,6 @@ services:
 
 volumes:
   openclaw_data:
+    driver: local
+  logs_data:
     driver: local
