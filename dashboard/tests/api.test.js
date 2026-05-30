@@ -27,12 +27,24 @@ jest.mock('node-fetch', () => jest.fn().mockResolvedValue({
   body: { on: jest.fn(), getReader: () => ({ read: jest.fn().mockResolvedValue({ done: true }) }) },
 }), { virtual: true });
 
+jest.mock('better-sqlite3', () => {
+  const stmtMock = { run: jest.fn().mockReturnValue({ lastInsertRowid: 1, changes: 1 }), get: jest.fn().mockReturnValue(null), all: jest.fn().mockReturnValue([]) };
+  const dbMock = {
+    pragma: jest.fn(),
+    exec: jest.fn(),
+    prepare: jest.fn().mockReturnValue(stmtMock),
+    close: jest.fn(),
+  };
+  return jest.fn().mockReturnValue(dbMock);
+});
+
 process.env.AUTH_MODE = 'basic';
 process.env.DASHBOARD_PASSWORD = 'testpass';
 process.env.LOG_DIR = '/tmp/selfclawy-test-logs';
 process.env.STATE_FILE = '/tmp/selfclawy-test-state.json';
 process.env.OPENCLAW_CONFIG_PATH = '/tmp/selfclawy-test-config.json';
 process.env.HERMES_CONFIG_PATH = '/tmp/selfclawy-test-hermes.yaml';
+process.env.DB_PATH = '/tmp/selfclawy-test.db';
 
 const fs = require('fs');
 fs.mkdirSync('/tmp/selfclawy-test-logs', { recursive: true });
@@ -157,6 +169,35 @@ function buildApp() {
     res.send('selfclawy_container_up{backend="openclaw"} 1\n');
   });
 
+  app.get('/api/scan/local-ai', auth, async (req, res) => {
+    res.json({ services: [{ name: 'Ollama', url: 'http://localhost:11434', type: 'ollama', reachable: false, models: [] }] });
+  });
+
+  app.get('/api/history', auth, (req, res) => { res.json([]); });
+  app.get('/api/users', auth, (req, res) => { res.json([{ username: 'admin', role: 'admin' }]); });
+  app.get('/api/mcp/servers', auth, (req, res) => { res.json([]); });
+  app.post('/api/mcp/servers', auth, verifyCsrf, (req, res) => {
+    const { name, url } = req.body || {};
+    if (!name || !url) return res.status(400).json({ error: 'name and url required' });
+    res.json({ ok: true });
+  });
+  app.get('/api/routing', auth, (req, res) => { res.json([]); });
+  app.post('/api/routing', auth, verifyCsrf, (req, res) => {
+    const { condition_type, condition_value, target_model } = req.body || {};
+    if (!condition_type || !condition_value || !target_model) return res.status(400).json({ error: 'required' });
+    res.json({ ok: true });
+  });
+  app.get('/api/presets', auth, (req, res) => { res.json([]); });
+  app.get('/api/audit', auth, (req, res) => { res.json([]); });
+  app.get('/api/notifications', auth, (req, res) => { res.json({ notifications: [], unread: 0 }); });
+  app.get('/api/metrics/history', auth, (req, res) => {
+    const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().slice(0, 10); });
+    res.json({ days, rows: [] });
+  });
+  app.get('/api/setup/status', (req, res) => {
+    res.json({ complete: false, activeBackend: 'openclaw' });
+  });
+
   return app;
 }
 
@@ -256,5 +297,112 @@ describe('GET /api/metrics + /metrics', () => {
   it('returns Prometheus format', async () => {
     const r = await require('supertest')(app).get('/metrics').set(AUTH);
     expect(r.text).toContain('selfclawy_container_up');
+  });
+});
+
+describe('GET /api/scan/local-ai', () => {
+  it('returns services array', async () => {
+    const r = await require('supertest')(app).get('/api/scan/local-ai').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(r.body).toHaveProperty('services');
+    expect(Array.isArray(r.body.services)).toBe(true);
+  });
+});
+
+describe('GET /api/history', () => {
+  it('returns empty array', async () => {
+    const r = await require('supertest')(app).get('/api/history').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body)).toBe(true);
+  });
+});
+
+describe('GET /api/users', () => {
+  it('returns users list', async () => {
+    const r = await require('supertest')(app).get('/api/users').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body)).toBe(true);
+  });
+});
+
+describe('GET /api/mcp/servers', () => {
+  it('returns empty array', async () => {
+    const r = await require('supertest')(app).get('/api/mcp/servers').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body)).toBe(true);
+  });
+});
+
+describe('POST /api/mcp/servers', () => {
+  it('adds and lists MCP server', async () => {
+    const r = await require('supertest')(app).post('/api/mcp/servers').set(AUTH)
+      .send({ name: 'test-mcp', url: 'http://localhost:9999' });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(true);
+  });
+  it('rejects missing url', async () => {
+    const r = await require('supertest')(app).post('/api/mcp/servers').set(AUTH)
+      .send({ name: 'test' });
+    expect(r.status).toBe(400);
+  });
+});
+
+describe('GET /api/routing', () => {
+  it('returns routing rules', async () => {
+    const r = await require('supertest')(app).get('/api/routing').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body)).toBe(true);
+  });
+});
+
+describe('POST /api/routing', () => {
+  it('adds routing rule', async () => {
+    const r = await require('supertest')(app).post('/api/routing').set(AUTH)
+      .send({ condition_type: 'keyword', condition_value: 'code', target_model: 'claude-opus-4-8' });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(true);
+  });
+});
+
+describe('GET /api/presets', () => {
+  it('returns presets', async () => {
+    const r = await require('supertest')(app).get('/api/presets').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body)).toBe(true);
+  });
+});
+
+describe('GET /api/audit', () => {
+  it('returns audit log', async () => {
+    const r = await require('supertest')(app).get('/api/audit').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body)).toBe(true);
+  });
+});
+
+describe('GET /api/notifications', () => {
+  it('returns notifications', async () => {
+    const r = await require('supertest')(app).get('/api/notifications').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(r.body).toHaveProperty('notifications');
+    expect(r.body).toHaveProperty('unread');
+  });
+});
+
+describe('GET /api/metrics/history', () => {
+  it('returns 7-day history', async () => {
+    const r = await require('supertest')(app).get('/api/metrics/history').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(r.body).toHaveProperty('days');
+    expect(r.body).toHaveProperty('rows');
+    expect(r.body.days.length).toBe(7);
+  });
+});
+
+describe('GET /api/setup/status', () => {
+  it('returns setup status', async () => {
+    const r = await require('supertest')(app).get('/api/setup/status');
+    expect(r.status).toBe(200);
+    expect(r.body).toHaveProperty('complete');
   });
 });

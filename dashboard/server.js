@@ -10,6 +10,7 @@ const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
+const db = require('./db');
 
 const app = express();
 const httpServer = createServer(app);
@@ -108,11 +109,17 @@ setInterval(async () => {
     backendUptime[name] = s.uptime;
     const nowUp = s.running && s.healthy;
     if (lastState[name] !== null && lastState[name] !== nowUp) {
-      sendAlert(nowUp
-        ? `🟢 SelfClawy: ${name} is back online!`
-        : `🔴 SelfClawy: ${name} went offline!`);
+      if (nowUp) {
+        sendAlert(`🟢 SelfClawy: ${name} is back online!`);
+        db.addNotification('info', `${name} is back online`, `${name} container running`);
+      } else {
+        sendAlert(`🔴 SelfClawy: ${name} went offline!`);
+        db.addNotification('alert', `${name} went offline`, `${name} container stopped`);
+      }
     }
     lastState[name] = nowUp;
+    const today = new Date().toISOString().slice(0, 10);
+    db.upsertDailyMetrics(today, name, { requests: 0 });
   }
 }, 15000);
 
@@ -375,6 +382,219 @@ io.on('connection', (socket) => {
     if (logStream) try { logStream.destroy(); } catch (_) {}
     if (fileStream) try { fileStream.end(); } catch (_) {}
   });
+});
+
+// ── Setup wizard check ────────────────────────────────────────────────────────
+app.get('/setup', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
+});
+
+app.get('/api/setup/status', (req, res) => {
+  const s = readState();
+  res.json({ complete: !!s.setup_complete, activeBackend: s.activeBackend || 'openclaw' });
+});
+
+app.post('/api/setup/complete', (req, res) => {
+  const s = readState();
+  const { password, provider, apiKey, backend, channel } = req.body || {};
+  if (password) {
+    // Update admin password in users.json
+    const users = loadUsers();
+    const admin = users.find(u => u.username === 'admin');
+    if (admin) {
+      admin.passwordHash = bcrypt.hashSync(password, 10);
+      fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+    }
+  }
+  writeState({ ...s, setup_complete: true, activeBackend: backend || s.activeBackend || 'openclaw' });
+  db.addAudit('setup', 'setup_complete', 'wizard', 'ok', req.ip);
+  res.json({ ok: true });
+});
+
+// ── Local AI scanner ──────────────────────────────────────────────────────────
+app.get('/api/scan/local-ai', auth, async (req, res) => {
+  const fetch = (await import('node-fetch')).default;
+  const CANDIDATES = [
+    { name: 'Ollama',     url: 'http://localhost:11434', check: '/api/tags',   type: 'ollama'    },
+    { name: 'LM Studio', url: 'http://localhost:1234',  check: '/v1/models',  type: 'openai'    },
+    { name: 'llama.cpp',  url: 'http://localhost:8080',  check: '/health',     type: 'llamacpp'  },
+    { name: 'llama.cpp',  url: 'http://localhost:8000',  check: '/health',     type: 'llamacpp'  },
+    { name: 'Hermes',     url: 'http://localhost:8642',  check: '/health',     type: 'hermes'    },
+    { name: 'OpenClaw',   url: 'http://localhost:18789', check: '/health',     type: 'openclaw'  },
+    { name: 'Jan AI',     url: 'http://localhost:1337',  check: '/v1/models',  type: 'openai'    },
+    { name: 'GPT4All',    url: 'http://localhost:4891',  check: '/v1/models',  type: 'openai'    },
+    { name: 'TabbyML',    url: 'http://localhost:8080',  check: '/v1/health',  type: 'tabby'     },
+    { name: 'vLLM',       url: 'http://localhost:8000',  check: '/v1/models',  type: 'openai'    },
+  ];
+  const results = await Promise.all(CANDIDATES.map(async (c) => {
+    try {
+      const r = await fetch(c.url + c.check, { timeout: 1500 });
+      if (r.ok) {
+        let models = [];
+        try {
+          const d = await r.json();
+          if (c.type === 'ollama' && d.models) models = d.models.map(m => m.name);
+          else if (d.data) models = d.data.map(m => m.id);
+        } catch (_) {}
+        return { ...c, reachable: true, models };
+      }
+    } catch (_) {}
+    return { ...c, reachable: false, models: [] };
+  }));
+  // Deduplicate by url
+  const seen = new Set();
+  const deduped = results.filter(r => { if (seen.has(r.url)) return false; seen.add(r.url); return true; });
+  res.json({ services: deduped });
+});
+
+// ── Conversation history ──────────────────────────────────────────────────────
+app.get('/api/history', auth, (req, res) => {
+  const { backend, limit = '50', offset = '0' } = req.query;
+  res.json(db.getConversations({ backend, limit: parseInt(limit), offset: parseInt(offset) }));
+});
+
+app.get('/api/history/:id', auth, (req, res) => {
+  const row = db.getConversation(parseInt(req.params.id));
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  res.json(row);
+});
+
+app.delete('/api/history/:id', auth, verifyCsrf, (req, res) => {
+  db.deleteConversation(parseInt(req.params.id));
+  db.addAudit(req.user?.username || 'admin', 'delete_history', req.params.id, 'ok', req.ip);
+  res.json({ ok: true });
+});
+
+// ── User management ───────────────────────────────────────────────────────────
+app.get('/api/users', auth, (req, res) => {
+  const users = loadUsers().map(u => ({ username: u.username, role: u.role }));
+  res.json(users);
+});
+
+app.post('/api/users', auth, verifyCsrf, async (req, res) => {
+  if (req.user?.role !== 'admin' && AUTH_MODE === 'jwt') return res.status(403).json({ error: 'Admin only' });
+  const { username, password, role = 'viewer' } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  const users = loadUsers();
+  if (users.find(u => u.username === username)) return res.status(409).json({ error: 'User exists' });
+  users.push({ username, passwordHash: bcrypt.hashSync(password, 10), role });
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  db.addAudit(req.user?.username || 'admin', 'create_user', username, 'ok', req.ip);
+  res.json({ ok: true });
+});
+
+app.patch('/api/users/:username', auth, verifyCsrf, async (req, res) => {
+  if (req.user?.role !== 'admin' && AUTH_MODE === 'jwt') return res.status(403).json({ error: 'Admin only' });
+  const { password, role } = req.body || {};
+  const users = loadUsers();
+  const user = users.find(u => u.username === req.params.username);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  if (password) user.passwordHash = bcrypt.hashSync(password, 10);
+  if (role) user.role = role;
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  db.addAudit(req.user?.username || 'admin', 'update_user', req.params.username, 'ok', req.ip);
+  res.json({ ok: true });
+});
+
+app.delete('/api/users/:username', auth, verifyCsrf, (req, res) => {
+  if (req.user?.role !== 'admin' && AUTH_MODE === 'jwt') return res.status(403).json({ error: 'Admin only' });
+  if (req.params.username === 'admin') return res.status(400).json({ error: 'Cannot delete admin' });
+  const users = loadUsers().filter(u => u.username !== req.params.username);
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  db.addAudit(req.user?.username || 'admin', 'delete_user', req.params.username, 'ok', req.ip);
+  res.json({ ok: true });
+});
+
+// ── MCP server management ─────────────────────────────────────────────────────
+app.get('/api/mcp/servers', auth, (req, res) => {
+  res.json(db.getMcpServers().map(s => ({ ...s, auth_token: s.auth_token ? '***' : null })));
+});
+
+app.post('/api/mcp/servers', auth, verifyCsrf, (req, res) => {
+  const { name, url, auth_token } = req.body || {};
+  if (!name || !url) return res.status(400).json({ error: 'name and url required' });
+  db.addMcpServer(name, url, auth_token);
+  db.addAudit(req.user?.username || 'admin', 'add_mcp_server', name, 'ok', req.ip);
+  res.json({ ok: true });
+});
+
+app.delete('/api/mcp/servers/:id', auth, verifyCsrf, (req, res) => {
+  db.deleteMcpServer(parseInt(req.params.id));
+  db.addAudit(req.user?.username || 'admin', 'delete_mcp_server', req.params.id, 'ok', req.ip);
+  res.json({ ok: true });
+});
+
+app.post('/api/mcp/servers/:id/test', auth, async (req, res) => {
+  const servers = db.getMcpServers();
+  const server = servers.find(s => s.id === parseInt(req.params.id));
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const headers = {};
+    if (server.auth_token) headers['Authorization'] = `Bearer ${server.auth_token}`;
+    const r = await fetch(server.url, { timeout: 5000, headers });
+    res.json({ ok: r.ok, status: r.status });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// ── Routing rules ─────────────────────────────────────────────────────────────
+app.get('/api/routing', auth, (req, res) => { res.json(db.getRoutingRules()); });
+
+app.post('/api/routing', auth, verifyCsrf, (req, res) => {
+  const { condition_type, condition_value, target_model, target_backend, priority = 0 } = req.body || {};
+  if (!condition_type || !condition_value || !target_model) return res.status(400).json({ error: 'condition_type, condition_value, target_model required' });
+  db.addRoutingRule(condition_type, condition_value, target_model, target_backend, priority);
+  res.json({ ok: true });
+});
+
+app.delete('/api/routing/:id', auth, verifyCsrf, (req, res) => {
+  db.deleteRoutingRule(parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
+// ── Presets ───────────────────────────────────────────────────────────────────
+app.get('/api/presets', auth, (req, res) => { res.json(db.getPresets()); });
+
+app.post('/api/presets', auth, verifyCsrf, (req, res) => {
+  const { name, system_prompt, model, channel } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name required' });
+  db.addPreset(name, system_prompt, model, channel);
+  res.json({ ok: true });
+});
+
+app.delete('/api/presets/:id', auth, verifyCsrf, (req, res) => {
+  db.deletePreset(parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
+// ── Audit log ─────────────────────────────────────────────────────────────────
+app.get('/api/audit', auth, (req, res) => {
+  const { limit = '100', offset = '0' } = req.query;
+  res.json(db.getAuditLog({ limit: parseInt(limit), offset: parseInt(offset) }));
+});
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+app.get('/api/notifications', auth, (req, res) => {
+  res.json({ notifications: db.getNotifications(), unread: db.getUnreadCount() });
+});
+
+app.post('/api/notifications/:id/read', auth, (req, res) => {
+  if (req.params.id === 'all') db.markAllRead();
+  else db.markRead(parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
+// ── 7-day metrics ─────────────────────────────────────────────────────────────
+app.get('/api/metrics/history', auth, (req, res) => {
+  res.json(db.getMetrics7Days());
+});
+
+// ── Restore backup ────────────────────────────────────────────────────────────
+app.post('/api/restore', auth, verifyCsrf, (req, res) => {
+  // Streams are complex; inform client of the manual approach for now
+  res.json({ ok: false, error: 'Restore via: docker run --rm -v <volume>:/data alpine tar xzf - < backup.tar.gz' });
 });
 
 httpServer.listen(PORT, () => console.log(`SelfClawy dashboard running at http://localhost:${PORT}`));

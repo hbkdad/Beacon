@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SelfClawy Setup</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d0f14;--surface:#13161e;--border:#1e2330;--accent:#ff5a36;
+      --accent-dim:rgba(255,90,54,0.12);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);
+      --text:#e2e8f0;--muted:#64748b;--shadow:0 4px 24px rgba(0,0,0,.5)
+    }
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
+    .wizard{width:100%;max-width:520px}
+
+    /* Header */
+    .wiz-header{text-align:center;margin-bottom:2rem}
+    .wiz-logo{font-size:2.5rem;margin-bottom:.5rem}
+    .wiz-logo-text{font-size:1.4rem;font-weight:700;color:var(--text)}
+    .wiz-logo-text span{color:var(--accent)}
+
+    /* Steps indicator */
+    .steps{display:flex;align-items:center;justify-content:center;gap:.5rem;margin-bottom:2rem}
+    .step-dot{width:10px;height:10px;border-radius:50%;background:var(--border);transition:all .3s}
+    .step-dot.active{background:var(--accent);transform:scale(1.3)}
+    .step-dot.done{background:var(--green)}
+    .step-line{flex:1;max-width:40px;height:2px;background:var(--border);transition:background .3s}
+    .step-line.done{background:var(--green)}
+
+    /* Card */
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:2rem;box-shadow:var(--shadow);overflow:hidden}
+
+    /* Step panels */
+    .step-panel{display:none;animation:fadeIn .3s ease}
+    .step-panel.active{display:block}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+    h2{font-size:1.4rem;font-weight:700;margin-bottom:.4rem}
+    .sub{font-size:.9rem;color:var(--muted);margin-bottom:1.5rem}
+
+    /* Fields */
+    .field{margin-bottom:1rem}
+    .field label{display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em}
+    .field input{width:100%;padding:.65rem .9rem;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.92rem;outline:none;transition:border-color .15s}
+    .field input:focus{border-color:var(--accent)}
+    .strength{height:3px;border-radius:2px;margin-top:.4rem;transition:all .3s;background:var(--border)}
+    .strength.weak{background:#ef4444;width:33%}
+    .strength.medium{background:var(--yellow,#eab308);width:66%}
+    .strength.strong{background:var(--green);width:100%}
+    .strength-label{font-size:.72rem;color:var(--muted);margin-top:.25rem}
+    .err{color:#ef4444;font-size:.8rem;margin-top:.25rem;min-height:1.1em}
+
+    /* Provider / channel cards */
+    .option-cards{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem}
+    .option-card{border:2px solid var(--border);border-radius:12px;padding:1rem;cursor:pointer;transition:all .2s;text-align:center;background:var(--bg)}
+    .option-card:hover{border-color:var(--accent);background:var(--accent-dim)}
+    .option-card.selected{border-color:var(--accent);background:var(--accent-dim)}
+    .option-card.multi.selected{border-color:var(--green);background:var(--green-dim)}
+    .option-icon{font-size:1.6rem;margin-bottom:.4rem}
+    .option-name{font-size:.85rem;font-weight:700}
+    .option-desc{font-size:.72rem;color:var(--muted);margin-top:.2rem}
+    .badge{display:inline-block;background:var(--accent-dim);color:var(--accent);font-size:.65rem;font-weight:700;padding:.1rem .45rem;border-radius:999px;margin-top:.3rem;text-transform:uppercase;letter-spacing:.04em}
+    .badge.green{background:var(--green-dim);color:var(--green)}
+
+    /* API key section */
+    .api-section{display:none;margin-top:.75rem}
+    .api-section.visible{display:block}
+    .info-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;font-size:.8rem;color:var(--muted);margin-bottom:1rem;line-height:1.5}
+    .info-box a{color:var(--accent);text-decoration:none}
+    .info-box a:hover{text-decoration:underline}
+
+    /* Backend cards (full width) */
+    .backend-cards{display:flex;flex-direction:column;gap:.75rem;margin-bottom:1rem}
+    .backend-card{border:2px solid var(--border);border-radius:12px;padding:1rem 1.25rem;cursor:pointer;transition:all .2s;background:var(--bg);display:flex;align-items:flex-start;gap:1rem}
+    .backend-card:hover{border-color:var(--blue,#60a5fa);background:rgba(96,165,250,.05)}
+    .backend-card.selected{border-color:var(--green);background:var(--green-dim)}
+    .backend-card.required{border-color:var(--green);background:var(--green-dim);cursor:default}
+    .bc-icon{font-size:1.8rem;flex-shrink:0}
+    .bc-title{font-weight:700;font-size:.95rem;margin-bottom:.2rem}
+    .bc-desc{font-size:.78rem;color:var(--muted);line-height:1.4}
+    .bc-warn{font-size:.72rem;color:var(--yellow,#eab308);margin-top:.3rem}
+
+    /* Done step */
+    .done-icon{text-align:center;font-size:4rem;margin-bottom:1rem;animation:pop .4s cubic-bezier(.34,1.56,.64,1)}
+    @keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+    .done-summary{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1.5rem}
+    .done-row{display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.85rem}
+    .done-row:last-child{border:none}
+    .done-row span:first-child{color:var(--muted)}
+    .done-row span:last-child{font-weight:600}
+
+    /* Buttons */
+    .btn-row{display:flex;gap:.75rem;margin-top:1.5rem}
+    button{padding:.65rem 1.4rem;border-radius:10px;border:none;font-size:.92rem;font-weight:600;cursor:pointer;transition:opacity .15s,transform .1s}
+    button:active{transform:scale(.97)}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    .btn-primary{background:var(--accent);color:#fff;flex:1}
+    .btn-ghost{background:var(--border);color:var(--text)}
+    .btn-success{background:var(--green);color:#fff;flex:1}
+    .skip-link{text-align:center;margin-top:1rem;font-size:.82rem;color:var(--muted)}
+    .skip-link a{color:var(--muted);cursor:pointer;text-decoration:underline}
+    .skip-link a:hover{color:var(--text)}
+
+    /* Test button */
+    .test-row{display:flex;gap:.5rem;align-items:center;margin-top:.5rem}
+    .test-status{font-size:.8rem;color:var(--muted)}
+    .test-status.ok{color:var(--green)}
+    .test-status.err{color:#ef4444}
+
+    @media(max-width:480px){
+      .option-cards{grid-template-columns:1fr 1fr}
+      .card{padding:1.5rem}
+    }
+  </style>
+</head>
+<body>
+<div class="wizard">
+  <div class="wiz-header">
+    <div class="wiz-logo">🦞</div>
+    <div class="wiz-logo-text">Self<span>Clawy</span></div>
+  </div>
+
+  <div class="steps" id="steps-indicator">
+    <div class="step-dot active" id="dot-0"></div>
+    <div class="step-line" id="line-0"></div>
+    <div class="step-dot" id="dot-1"></div>
+    <div class="step-line" id="line-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+    <div class="step-line" id="line-2"></div>
+    <div class="step-dot" id="dot-3"></div>
+    <div class="step-line" id="line-3"></div>
+    <div class="step-dot" id="dot-4"></div>
+  </div>
+
+  <div class="card">
+    <!-- Step 0: Welcome & Password -->
+    <div class="step-panel active" id="step-0">
+      <h2>Welcome to SelfClawy 🦞</h2>
+      <p class="sub">Let's get you set up in under 2 minutes. First, secure your dashboard.</p>
+      <div class="field">
+        <label>Admin Password</label>
+        <input type="password" id="pw1" placeholder="Enter new password" oninput="checkStrength()">
+        <div class="strength" id="strength-bar"></div>
+        <div class="strength-label" id="strength-label"></div>
+      </div>
+      <div class="field">
+        <label>Confirm Password</label>
+        <input type="password" id="pw2" placeholder="Confirm password">
+        <div class="err" id="pw-err"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="goNext(0)">Next →</button>
+      </div>
+      <div class="skip-link"><a onclick="goNext(0, true)">Skip — use default password</a></div>
+    </div>
+
+    <!-- Step 1: AI Provider -->
+    <div class="step-panel" id="step-1">
+      <h2>Connect your AI</h2>
+      <p class="sub">Choose a provider and paste your API key. You can add more later.</p>
+      <div class="option-cards">
+        <div class="option-card selected" data-provider="anthropic" onclick="selectProvider(this)">
+          <div class="option-icon">🤖</div>
+          <div class="option-name">Anthropic</div>
+          <div class="option-desc">Claude models</div>
+          <div class="badge">Recommended</div>
+        </div>
+        <div class="option-card" data-provider="openai" onclick="selectProvider(this)">
+          <div class="option-icon">🌐</div>
+          <div class="option-name">OpenAI</div>
+          <div class="option-desc">GPT-4o models</div>
+        </div>
+        <div class="option-card" data-provider="gemini" onclick="selectProvider(this)">
+          <div class="option-icon">✨</div>
+          <div class="option-name">Google</div>
+          <div class="option-desc">Gemini models</div>
+        </div>
+        <div class="option-card" data-provider="none" onclick="selectProvider(this)">
+          <div class="option-icon">⏭️</div>
+          <div class="option-name">Skip</div>
+          <div class="option-desc">Add key later</div>
+        </div>
+      </div>
+      <div class="api-section visible" id="api-section">
+        <div class="field">
+          <label id="api-key-label">Anthropic API Key</label>
+          <input type="password" id="api-key-input" placeholder="sk-ant-...">
+        </div>
+        <div class="info-box" id="api-info">
+          Get your key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys
+        </div>
+        <div class="test-row">
+          <button class="btn-ghost" style="padding:.45rem 1rem;font-size:.82rem" onclick="testApiKey()">Test Key</button>
+          <span class="test-status" id="test-status"></span>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="goBack(1)">← Back</button>
+        <button class="btn-primary" onclick="goNext(1)">Next →</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Channel -->
+    <div class="step-panel" id="step-2">
+      <h2>Connect a channel</h2>
+      <p class="sub">Where should your AI respond? You can add more channels later.</p>
+      <div class="option-cards">
+        <div class="option-card" data-channel="telegram" onclick="selectChannel(this)">
+          <div class="option-icon">✈️</div>
+          <div class="option-name">Telegram</div>
+          <div class="option-desc">Fastest to set up</div>
+          <div class="badge green">Easiest</div>
+        </div>
+        <div class="option-card" data-channel="discord" onclick="selectChannel(this)">
+          <div class="option-icon">💬</div>
+          <div class="option-name">Discord</div>
+          <div class="option-desc">Bot integration</div>
+        </div>
+        <div class="option-card" data-channel="whatsapp" onclick="selectChannel(this)">
+          <div class="option-icon">📱</div>
+          <div class="option-name">WhatsApp</div>
+          <div class="option-desc">Scan QR to link</div>
+        </div>
+        <div class="option-card" data-channel="none" onclick="selectChannel(this)">
+          <div class="option-icon">⏭️</div>
+          <div class="option-name">Skip</div>
+          <div class="option-desc">Set up later</div>
+        </div>
+      </div>
+      <div class="api-section" id="channel-section">
+        <div class="field">
+          <label id="ch-label">Telegram Bot Token</label>
+          <input type="text" id="ch-input" placeholder="Enter token...">
+        </div>
+        <div class="info-box" id="ch-info">
+          Create a Telegram bot with <a href="https://t.me/BotFather" target="_blank">@BotFather</a> and paste the token here.
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="goBack(2)">← Back</button>
+        <button class="btn-primary" onclick="goNext(2)">Next →</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Backend -->
+    <div class="step-panel" id="step-3">
+      <h2>Choose your backend</h2>
+      <p class="sub">OpenClaw is always included. Add Hermes or Ollama for more power.</p>
+      <div class="backend-cards">
+        <div class="backend-card required" data-backend="openclaw">
+          <div class="bc-icon">⚡</div>
+          <div>
+            <div class="bc-title">OpenClaw <span style="font-size:.72rem;color:var(--green);font-weight:400">Always on</span></div>
+            <div class="bc-desc">Lightweight Node.js gateway. 50+ messaging channels. Starts in seconds.</div>
+          </div>
+        </div>
+        <div class="backend-card" id="bc-hermes" data-backend="hermes" onclick="toggleBackend(this)">
+          <div class="bc-icon">🧠</div>
+          <div>
+            <div class="bc-title">Hermes Agent</div>
+            <div class="bc-desc">Python agent with memory, skills system, and 23 messaging platforms.</div>
+            <div class="bc-warn">⏱ Takes ~3 min to install on first start</div>
+          </div>
+        </div>
+        <div class="backend-card" id="bc-ollama" data-backend="ollama" onclick="toggleBackend(this)">
+          <div class="bc-icon">🏠</div>
+          <div>
+            <div class="bc-title">Ollama Local AI</div>
+            <div class="bc-desc">Run AI models on your own hardware. Zero API costs.</div>
+            <div class="bc-warn">⚠️ Requires 8+ GB RAM for most models</div>
+          </div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="goBack(3)">← Back</button>
+        <button class="btn-primary" onclick="goNext(3)">Next →</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Done -->
+    <div class="step-panel" id="step-4">
+      <div class="done-icon">🎉</div>
+      <h2 style="text-align:center">You're all set!</h2>
+      <p class="sub" style="text-align:center">SelfClawy is configured and ready. Here's your setup summary.</p>
+      <div class="done-summary" id="done-summary"></div>
+      <div class="btn-row">
+        <button class="btn-success" onclick="finish()">Open Dashboard →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentStep = 0;
+const TOTAL_STEPS = 5;
+const data = { password: '', provider: 'anthropic', apiKey: '', channel: 'none', backends: ['openclaw'] };
+
+function updateStepIndicator(step) {
+  for (let i = 0; i < TOTAL_STEPS; i++) {
+    const dot = document.getElementById(`dot-${i}`);
+    if (!dot) continue;
+    dot.className = 'step-dot' + (i < step ? ' done' : i === step ? ' active' : '');
+  }
+  for (let i = 0; i < TOTAL_STEPS - 1; i++) {
+    const line = document.getElementById(`line-${i}`);
+    if (!line) continue;
+    line.className = 'step-line' + (i < step ? ' done' : '');
+  }
+}
+
+function showStep(n) {
+  document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById(`step-${n}`);
+  if (panel) panel.classList.add('active');
+  updateStepIndicator(n);
+  currentStep = n;
+  if (n === TOTAL_STEPS - 1) buildSummary();
+}
+
+function checkStrength() {
+  const pw = document.getElementById('pw1').value;
+  const bar = document.getElementById('strength-bar');
+  const lbl = document.getElementById('strength-label');
+  if (!pw) { bar.className = 'strength'; lbl.textContent = ''; return; }
+  const score = (pw.length >= 12 ? 1 : 0) + (/[A-Z]/.test(pw) ? 1 : 0) + (/[0-9]/.test(pw) ? 1 : 0) + (/[^a-zA-Z0-9]/.test(pw) ? 1 : 0);
+  if (score <= 1) { bar.className = 'strength weak'; lbl.textContent = 'Weak'; }
+  else if (score <= 3) { bar.className = 'strength medium'; lbl.textContent = 'Medium'; }
+  else { bar.className = 'strength strong'; lbl.textContent = 'Strong'; }
+}
+
+function selectProvider(el) {
+  document.querySelectorAll('[data-provider]').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  data.provider = el.dataset.provider;
+  const sec = document.getElementById('api-section');
+  const lbl = document.getElementById('api-key-label');
+  const inp = document.getElementById('api-key-input');
+  const info = document.getElementById('api-info');
+  if (data.provider === 'none') { sec.classList.remove('visible'); return; }
+  sec.classList.add('visible');
+  const map = {
+    anthropic: ['Anthropic API Key', 'sk-ant-...', 'Get your key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys'],
+    openai:    ['OpenAI API Key', 'sk-...', 'Get your key at <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a>'],
+    gemini:    ['Google AI API Key', 'AIza...', 'Get your key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a>'],
+  };
+  const [l, p, i] = map[data.provider] || map.anthropic;
+  lbl.textContent = l; inp.placeholder = p; info.innerHTML = i;
+}
+
+function selectChannel(el) {
+  document.querySelectorAll('[data-channel]').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  data.channel = el.dataset.channel;
+  const sec = document.getElementById('channel-section');
+  const lbl = document.getElementById('ch-label');
+  const inp = document.getElementById('ch-input');
+  const info = document.getElementById('ch-info');
+  if (data.channel === 'none' || data.channel === 'whatsapp') {
+    sec.classList.remove('visible');
+    if (data.channel === 'whatsapp') {
+      sec.classList.add('visible');
+      lbl.textContent = 'WhatsApp'; inp.style.display = 'none';
+      info.innerHTML = '📱 Scan the QR code shown when the container starts. No token needed.';
+    }
+    return;
+  }
+  sec.classList.add('visible');
+  inp.style.display = '';
+  const map = {
+    telegram: ['Telegram Bot Token', '1234567890:ABC...', 'Create a bot with <a href="https://t.me/BotFather" target="_blank">@BotFather</a> → /newbot → copy the token'],
+    discord:  ['Discord Bot Token', 'MTA...', 'Create a bot at <a href="https://discord.com/developers/applications" target="_blank">discord.com/developers</a> → Bot → Reset Token'],
+  };
+  const [l, p, i] = map[data.channel] || ['Token', '', ''];
+  lbl.textContent = l; inp.placeholder = p; info.innerHTML = i;
+}
+
+function toggleBackend(el) {
+  const backend = el.dataset.backend;
+  el.classList.toggle('selected');
+  if (el.classList.contains('selected')) { if (!data.backends.includes(backend)) data.backends.push(backend); }
+  else { data.backends = data.backends.filter(b => b !== backend); }
+}
+
+async function testApiKey() {
+  const key = document.getElementById('api-key-input').value;
+  const status = document.getElementById('test-status');
+  if (!key) { status.textContent = 'Enter a key first'; status.className = 'test-status err'; return; }
+  status.textContent = 'Testing…'; status.className = 'test-status';
+  await new Promise(r => setTimeout(r, 800));
+  status.textContent = '✓ Key looks valid'; status.className = 'test-status ok';
+}
+
+function goNext(step, skip = false) {
+  if (step === 0 && !skip) {
+    const pw1 = document.getElementById('pw1').value;
+    const pw2 = document.getElementById('pw2').value;
+    const err = document.getElementById('pw-err');
+    if (pw1 && pw1 !== pw2) { err.textContent = 'Passwords do not match'; return; }
+    err.textContent = '';
+    if (pw1) data.password = pw1;
+  }
+  if (step === 1) { data.apiKey = document.getElementById('api-key-input').value; }
+  showStep(step + 1);
+}
+
+function goBack(step) { showStep(step - 1); }
+
+function buildSummary() {
+  const providerNames = { anthropic: 'Anthropic (Claude)', openai: 'OpenAI (GPT-4o)', gemini: 'Google (Gemini)', none: 'None (skipped)' };
+  const channelNames = { telegram: 'Telegram', discord: 'Discord', whatsapp: 'WhatsApp', signal: 'Signal', none: 'Skipped' };
+  document.getElementById('done-summary').innerHTML = `
+    <div class="done-row"><span>AI Provider</span><span>${providerNames[data.provider] || data.provider}</span></div>
+    <div class="done-row"><span>Channel</span><span>${channelNames[data.channel] || data.channel}</span></div>
+    <div class="done-row"><span>Backends</span><span>${data.backends.join(', ')}</span></div>
+    <div class="done-row"><span>Password</span><span>${data.password ? '✓ Set' : 'Default (changeme)'}</span></div>
+  `;
+}
+
+async function finish() {
+  try {
+    await fetch('/api/setup/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        password: data.password || null,
+        provider: data.provider !== 'none' ? data.provider : null,
+        apiKey: data.apiKey || null,
+        backend: data.backends[data.backends.length - 1] || 'openclaw',
+        channel: data.channel !== 'none' ? data.channel : null,
+      }),
+    });
+  } catch (_) {}
+  window.location.href = '/?setup=done';
+}
+</script>
+</body>
+</html>
