@@ -1,0 +1,32 @@
+# Beacon CODEOWNERS
+# These owners are automatically requested for review on PRs.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all files
+*                           @hbkdad
+
+# Core dashboard
+/dashboard/server.js        @hbkdad
+/dashboard/db.js            @hbkdad
+/dashboard/logParser.js     @hbkdad
+
+# Public UI
+/dashboard/public/          @hbkdad
+
+# Docker + infrastructure
+/docker-compose.yml         @hbkdad
+/docker-compose.gpu.yml     @hbkdad
+/hermes/                    @hbkdad
+
+# Go launcher
+/launcher/                  @hbkdad
+
+# CI/CD pipelines
+/.github/workflows/         @hbkdad
+
+# Install scripts
+/scripts/                   @hbkdad
+
+# Security-sensitive config
+/.env.example               @hbkdad
+/config/                    @hbkdad
