@@ -5,3 +5,8 @@ node_modules/
 
 # Claude Code agent worktrees (temporary, auto-generated)
 .claude/worktrees/
+
+# Go build artifacts
+launcher/launcher
+launcher/beacon
+launcher/beacon-*
