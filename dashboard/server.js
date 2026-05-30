@@ -557,6 +557,79 @@ app.post('/api/mcp/servers/:id/test', auth, async (req, res) => {
   }
 });
 
+// ── ClawHub skill browser ─────────────────────────────────────────────────────
+const CURATED_SKILLS = [
+  { name: 'web-search',      description: 'Search the web and summarize results in chat',              category: 'Information',  installs: 22100, version: '3.0.1' },
+  { name: 'reminder',        description: 'Set reminders — "remind me in 30 min to call John"',        category: 'Productivity', installs: 18400, version: '2.1.0' },
+  { name: 'image-gen',       description: 'Generate images via DALL·E or Stable Diffusion',            category: 'Creative',     installs: 15700, version: '2.2.0' },
+  { name: 'summarize',       description: 'Summarize URLs, PDFs, or pasted text blocks',               category: 'Productivity', installs: 16500, version: '2.4.0' },
+  { name: 'todo',            description: 'Manage a personal to-do list across sessions',              category: 'Productivity', installs: 14200, version: '1.8.0' },
+  { name: 'email-draft',     description: 'Draft professional emails from bullet points',              category: 'Communication',installs: 13200, version: '1.6.0' },
+  { name: 'weather',         description: 'Current conditions and forecasts for any city',             category: 'Information',  installs: 19800, version: '1.5.2' },
+  { name: 'daily-brief',     description: 'Morning briefing: weather + news + calendar + tasks',       category: 'Productivity', installs: 9800,  version: '1.4.0' },
+  { name: 'spotify',         description: 'Play, pause, skip, and search Spotify tracks by chat',      category: 'Media',        installs: 10200, version: '1.3.0' },
+  { name: 'news',            description: 'Top headlines from configurable news sources',              category: 'Information',  installs: 11300, version: '1.3.0' },
+  { name: 'youtube-summary', description: 'Summarize any YouTube video from its URL',                  category: 'Media',        installs: 8400,  version: '1.2.0' },
+  { name: 'calendar-sync',   description: 'Read and create Google Calendar events',                    category: 'Productivity', installs: 8900,  version: '1.4.0' },
+  { name: 'proofreader',     description: 'Grammar, style, and readability improvements',              category: 'Writing',      installs: 7300,  version: '1.5.0' },
+  { name: 'github-issues',   description: 'Create, list, and comment on GitHub issues by chat',        category: 'Development',  installs: 7800,  version: '1.1.0' },
+  { name: 'notion-pages',    description: 'Create and append to Notion pages by chat',                 category: 'Productivity', installs: 6700,  version: '1.1.0' },
+  { name: 'translate',       description: 'Translate text between 100+ languages via LibreTranslate',  category: 'Language',     installs: 9700,  version: '1.2.1' },
+  { name: 'stock-ticker',    description: 'Live stock prices and basic fundamentals',                  category: 'Finance',      installs: 5800,  version: '1.0.4' },
+  { name: 'crypto-price',    description: 'Real-time crypto prices and 24h change',                   category: 'Finance',      installs: 6100,  version: '1.1.0' },
+  { name: 'system-monitor',  description: 'Report CPU, RAM, disk usage on your server',               category: 'DevOps',       installs: 5200,  version: '1.2.0' },
+  { name: 'docker-manager',  description: 'List, start, and stop containers by chat',                  category: 'DevOps',       installs: 4100,  version: '1.0.1' },
+  { name: 'home-assistant',  description: 'Control Home Assistant devices and automations',            category: 'Smart Home',   installs: 3700,  version: '2.0.0' },
+  { name: 'expense-tracker', description: 'Log expenses by message, export weekly CSV',               category: 'Finance',      installs: 4200,  version: '1.0.1' },
+  { name: 'code-review',     description: 'Paste code, get a review with improvement suggestions',    category: 'Development',  installs: 5400,  version: '1.0.3' },
+  { name: 'tweet-draft',     description: 'Draft and schedule tweets with tone options',               category: 'Social',       installs: 4900,  version: '1.0.2' },
+];
+
+app.get('/api/skills', auth, async (req, res) => {
+  const q = (req.query.q || '').toLowerCase();
+  const category = req.query.category || '';
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const r = await fetch(`https://hub.openclaw.ai/api/skills?limit=50${q ? `&q=${encodeURIComponent(q)}` : ''}`, { timeout: 4000 });
+    if (r.ok) return res.json(await r.json());
+  } catch (_) {}
+  let skills = CURATED_SKILLS;
+  if (q) skills = skills.filter(s => s.name.includes(q) || s.description.toLowerCase().includes(q) || s.category.toLowerCase().includes(q));
+  if (category) skills = skills.filter(s => s.category === category);
+  res.json({ skills, source: 'curated', total: skills.length });
+});
+
+app.get('/api/skills/installed', auth, async (req, res) => {
+  try {
+    const container = docker.getContainer('openclaw');
+    const ex = await container.exec({ Cmd: ['openclaw', 'skill', 'list', '--json'], AttachStdout: true, AttachStderr: true });
+    const stream = await ex.start({ hijack: true, stdin: false });
+    let out = '';
+    stream.on('data', (chunk) => { out += chunk.slice(8).toString('utf8'); });
+    stream.on('end', () => { try { res.json(JSON.parse(out)); } catch { res.json({ skills: [] }); } });
+  } catch { res.json({ skills: [] }); }
+});
+
+app.post('/api/skills/install', auth, verifyCsrf, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name || !/^[a-z0-9_-]{1,64}$/.test(name)) return res.status(400).json({ error: 'Invalid skill name' });
+  db.addAudit(req.user?.username || 'admin', 'install_skill', name, 'started', req.ip);
+  try {
+    const container = docker.getContainer('openclaw');
+    const ex = await container.exec({ Cmd: ['openclaw', 'skill', 'install', name], AttachStdout: true, AttachStderr: true });
+    const stream = await ex.start({ hijack: true, stdin: false });
+    let out = '';
+    stream.on('data', (chunk) => { out += chunk.slice(8).toString('utf8'); });
+    stream.on('end', () => {
+      db.addAudit(req.user?.username || 'admin', 'install_skill', name, 'ok', req.ip);
+      res.json({ ok: true, output: out });
+    });
+    stream.on('error', (e) => res.status(500).json({ error: e.message }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Routing rules ─────────────────────────────────────────────────────────────
 app.get('/api/routing', auth, (req, res) => { res.json(db.getRoutingRules()); });
 

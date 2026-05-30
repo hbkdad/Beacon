@@ -57,6 +57,9 @@ selfclawy/
 | POST | /api/start|stop|restart | OpenClaw controls (legacy) |
 | POST | /api/:backend/start|stop|restart | Per-backend controls |
 | GET | /api/scan/local-ai | Scan ports for local AI services |
+| GET | /api/skills | List skills (ClawHub proxy → curated fallback, q/category params) |
+| GET | /api/skills/installed | List installed skills from openclaw container |
+| POST | /api/skills/install | Install skill via `openclaw skill install <name>` |
 | GET | /api/config | Read openclaw.json |
 | POST | /api/config | Update provider model |
 | GET | /api/ollama/models | List Ollama models |

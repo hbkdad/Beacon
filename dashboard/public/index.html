@@ -167,6 +167,27 @@
     .preset-name{font-weight:700;font-size:.9rem;margin-bottom:.3rem}
     .preset-desc{font-size:.75rem;color:var(--muted);line-height:1.4}
 
+    /* ── Skills browser ── */
+    .skills-toolbar{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem}
+    .skills-search{flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.45rem .75rem;color:var(--text);font-size:.85rem}
+    .skills-search:focus{outline:none;border-color:var(--accent)}
+    .skills-filter{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.4rem .6rem;color:var(--text);font-size:.8rem}
+    .skills-meta{font-size:.75rem;color:var(--muted);white-space:nowrap}
+    .skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.85rem}
+    .skill-card{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:1rem;display:flex;flex-direction:column;gap:.4rem;transition:border-color .15s,transform .12s}
+    .skill-card:hover{border-color:rgba(255,90,54,.35);transform:translateY(-1px)}
+    .skill-card.installed{border-color:rgba(34,197,94,.4)}
+    .skill-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem}
+    .skill-name{font-weight:700;font-size:.88rem;font-family:var(--mono);color:var(--accent)}
+    .skill-cat{font-size:.68rem;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:.1rem .5rem;color:var(--muted);white-space:nowrap}
+    .skill-desc{font-size:.8rem;color:var(--muted);line-height:1.5;flex:1}
+    .skill-footer{display:flex;align-items:center;justify-content:space-between;margin-top:.25rem}
+    .skill-installs{font-size:.7rem;color:var(--muted)}
+    .skill-badge{font-size:.68rem;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:var(--green);border-radius:999px;padding:.1rem .5rem}
+    .btn-install{background:var(--accent);color:#fff;border:none;border-radius:7px;padding:.3rem .75rem;font-size:.78rem;font-weight:600;cursor:pointer;transition:opacity .15s}
+    .btn-install:hover{opacity:.85}
+    .btn-install:disabled{opacity:.5;cursor:default}
+
     /* ── Notification panel ── */
     .notif-dropdown{position:absolute;top:calc(100% + 8px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.5rem;min-width:280px;box-shadow:var(--shadow);z-index:30;display:none}
     .notif-dropdown.open{display:block}
@@ -421,6 +442,34 @@
 
     <div style="border-top:1px solid var(--border);margin:1.5rem 0"></div>
 
+    <!-- ClawHub Skills -->
+    <div id="skills-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem">
+        <div>
+          <div class="section-label">ClawHub Skill Browser</div>
+          <div style="font-size:.8rem;color:var(--muted)">Browse and install community skills for OpenClaw</div>
+        </div>
+        <a href="https://hub.openclaw.ai" target="_blank" style="font-size:.78rem;color:var(--accent);text-decoration:none">hub.openclaw.ai ↗</a>
+      </div>
+      <div class="skills-toolbar">
+        <input class="skills-search" id="skill-search" type="text" placeholder="Search skills…" oninput="filterSkills()">
+        <select class="skills-filter" id="skill-cat" onchange="filterSkills()">
+          <option value="">All categories</option>
+          <option>Productivity</option><option>Information</option><option>Communication</option>
+          <option>Development</option><option>Media</option><option>Writing</option>
+          <option>Finance</option><option>Language</option><option>DevOps</option>
+          <option>Smart Home</option><option>Social</option><option>Creative</option>
+        </select>
+        <span class="skills-meta" id="skills-meta"></span>
+        <button class="btn-ghost btn-sm" onclick="loadSkills()">↺ Refresh</button>
+      </div>
+      <div class="skills-grid" id="skills-grid">
+        <div style="color:var(--muted);font-size:.85rem;padding:1rem 0">Loading skills…</div>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:1.5rem 0"></div>
+
     <!-- Presets -->
     <div>
       <div class="section-label">Preset Personas</div>
@@ -642,7 +691,7 @@ function switchTab(tab) {
   activeTab = tab;
   if (tab === 'history') loadHistory();
   if (tab === 'team') loadUsers();
-  if (tab === 'settings') { loadMcpServers(); loadRoutingRules(); loadPresets(); loadAudit(); }
+  if (tab === 'settings') { loadMcpServers(); loadRoutingRules(); loadPresets(); loadAudit(); loadSkills(); }
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -1148,6 +1197,93 @@ async function scanLocalAI() {
       </div>`).join('');
   } catch(e) { grid.innerHTML = `<div style="color:var(--red)">${escHtml(e.message)}</div>`; }
   finally { btn.disabled = false; btn.textContent = '🔍 Scan again'; }
+}
+
+// ── ClawHub Skills ────────────────────────────────────────────────────────────
+let allSkills = [];
+let installedSkillNames = new Set();
+
+async function loadSkills() {
+  const grid = document.getElementById('skills-grid');
+  grid.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.5rem 0">Loading…</div>';
+  try {
+    const [sr, ir] = await Promise.all([
+      apiFetch('/api/skills'),
+      apiFetch('/api/skills/installed'),
+    ]);
+    const sd = sr && sr.ok ? await sr.json() : { skills: [] };
+    const id = ir && ir.ok ? await ir.json() : { skills: [] };
+    allSkills = sd.skills || [];
+    installedSkillNames = new Set((id.skills || []).map(s => s.name || s));
+    document.getElementById('skills-meta').textContent =
+      `${allSkills.length} skills${sd.source === 'curated' ? ' (curated)' : ''}`;
+    renderSkills(allSkills);
+  } catch(e) {
+    grid.innerHTML = `<div style="color:var(--red);font-size:.82rem">${escHtml(e.message)}</div>`;
+  }
+}
+
+function filterSkills() {
+  const q = (document.getElementById('skill-search').value || '').toLowerCase();
+  const cat = document.getElementById('skill-cat').value;
+  let list = allSkills;
+  if (q) list = list.filter(s => s.name.includes(q) || (s.description||'').toLowerCase().includes(q) || (s.category||'').toLowerCase().includes(q));
+  if (cat) list = list.filter(s => s.category === cat);
+  document.getElementById('skills-meta').textContent = `${list.length} / ${allSkills.length} skills`;
+  renderSkills(list);
+}
+
+function renderSkills(skills) {
+  const grid = document.getElementById('skills-grid');
+  if (!skills.length) { grid.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.5rem 0">No skills found</div>'; return; }
+  grid.innerHTML = skills.map(s => {
+    const installed = installedSkillNames.has(s.name);
+    return `<div class="skill-card${installed ? ' installed' : ''}" id="skill-${escHtml(s.name)}">
+      <div class="skill-top">
+        <span class="skill-name">${escHtml(s.name)}</span>
+        <span class="skill-cat">${escHtml(s.category)}</span>
+      </div>
+      <div class="skill-desc">${escHtml(s.description)}</div>
+      <div class="skill-footer">
+        <span class="skill-installs">↓ ${(s.installs||0).toLocaleString()} installs${s.version ? ' · v' + escHtml(s.version) : ''}</span>
+        ${installed
+          ? '<span class="skill-badge">✓ Installed</span>'
+          : `<button class="btn-install" id="btn-${escHtml(s.name)}" onclick="installSkill('${escHtml(s.name)}')">Install</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function installSkill(name) {
+  const btn = document.getElementById(`btn-${name}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Installing…'; }
+  showProgress(`Installing skill: ${name}…`);
+  try {
+    const r = await apiFetch('/api/skills/install', { method: 'POST', body: JSON.stringify({ name }) });
+    const d = r ? await r.json() : null;
+    if (d && d.ok) {
+      installedSkillNames.add(name);
+      const card = document.getElementById(`skill-${name}`);
+      if (card) {
+        card.classList.add('installed');
+        const footer = card.querySelector('.skill-footer');
+        if (footer) {
+          const btnEl = footer.querySelector('.btn-install');
+          if (btnEl) btnEl.replaceWith(Object.assign(document.createElement('span'), { className: 'skill-badge', textContent: '✓ Installed' }));
+        }
+      }
+      doneProgress(`✓ ${name} installed`, false);
+      toast(`Skill "${name}" installed`);
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = 'Install'; }
+      doneProgress(`Failed to install ${name}`, true);
+      toast((d && d.error) || 'Install failed');
+    }
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Install'; }
+    doneProgress(`Error: ${e.message}`, true);
+    toast(e.message, 'error');
+  }
 }
 
 // ── Gateway ───────────────────────────────────────────────────────────────────

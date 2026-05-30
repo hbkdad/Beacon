@@ -198,6 +198,26 @@ function buildApp() {
     res.json({ complete: false, activeBackend: 'openclaw' });
   });
 
+  const CURATED_SKILLS = [
+    { name: 'web-search', description: 'Search the web', category: 'Information', installs: 22100, version: '3.0.1' },
+    { name: 'reminder',   description: 'Set reminders',  category: 'Productivity', installs: 18400, version: '2.1.0' },
+    { name: 'weather',    description: 'Weather forecasts', category: 'Information', installs: 19800, version: '1.5.2' },
+  ];
+  app.get('/api/skills', auth, (req, res) => {
+    const q = (req.query.q || '').toLowerCase();
+    const cat = req.query.category || '';
+    let skills = CURATED_SKILLS;
+    if (q) skills = skills.filter(s => s.name.includes(q) || s.description.toLowerCase().includes(q));
+    if (cat) skills = skills.filter(s => s.category === cat);
+    res.json({ skills, source: 'curated', total: skills.length });
+  });
+  app.get('/api/skills/installed', auth, (req, res) => { res.json({ skills: [] }); });
+  app.post('/api/skills/install', auth, verifyCsrf, (req, res) => {
+    const { name } = req.body || {};
+    if (!name || !/^[a-z0-9_-]{1,64}$/.test(name)) return res.status(400).json({ error: 'Invalid skill name' });
+    res.json({ ok: true, output: `Installing ${name}…\nDone.` });
+  });
+
   return app;
 }
 
@@ -404,5 +424,57 @@ describe('GET /api/setup/status', () => {
     const r = await require('supertest')(app).get('/api/setup/status');
     expect(r.status).toBe(200);
     expect(r.body).toHaveProperty('complete');
+  });
+});
+
+describe('GET /api/skills', () => {
+  it('returns curated skill list', async () => {
+    const r = await require('supertest')(app).get('/api/skills').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(r.body).toHaveProperty('skills');
+    expect(Array.isArray(r.body.skills)).toBe(true);
+    expect(r.body.skills.length).toBeGreaterThan(0);
+    expect(r.body.source).toBe('curated');
+  });
+  it('filters by search query', async () => {
+    const r = await require('supertest')(app).get('/api/skills?q=weather').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(r.body.skills.every(s => s.name.includes('weather') || s.description.toLowerCase().includes('weather'))).toBe(true);
+  });
+  it('filters by category', async () => {
+    const r = await require('supertest')(app).get('/api/skills?category=Productivity').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(r.body.skills.every(s => s.category === 'Productivity')).toBe(true);
+  });
+  it('returns 401 without auth', async () => {
+    const r = await require('supertest')(app).get('/api/skills');
+    expect(r.status).toBe(401);
+  });
+});
+
+describe('GET /api/skills/installed', () => {
+  it('returns installed skills list', async () => {
+    const r = await require('supertest')(app).get('/api/skills/installed').set(AUTH);
+    expect(r.status).toBe(200);
+    expect(r.body).toHaveProperty('skills');
+  });
+});
+
+describe('POST /api/skills/install', () => {
+  it('installs a valid skill', async () => {
+    const r = await require('supertest')(app).post('/api/skills/install').set(AUTH)
+      .send({ name: 'web-search' });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(true);
+  });
+  it('rejects invalid skill name', async () => {
+    const r = await require('supertest')(app).post('/api/skills/install').set(AUTH)
+      .send({ name: '../etc/passwd' });
+    expect(r.status).toBe(400);
+  });
+  it('rejects empty skill name', async () => {
+    const r = await require('supertest')(app).post('/api/skills/install').set(AUTH)
+      .send({});
+    expect(r.status).toBe(400);
   });
 });
