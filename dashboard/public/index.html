@@ -680,6 +680,7 @@ function showApp() {
   setInterval(poll, 10000);
   setInterval(loadBackends, 15000);
   setInterval(loadNotifications, 30000);
+  // Hide team tab in basic auth mode (authToken null = basic auth)
   const isJwt = !!authToken;
   document.querySelectorAll('[onclick*="switchTab(\'team\')"]').forEach(el => {
     el.style.display = isJwt ? '' : 'none';
