@@ -27,6 +27,9 @@ const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL || '';
 const AUTH_MODE = process.env.AUTH_MODE || 'basic';
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+if (AUTH_MODE === 'jwt' && !process.env.JWT_SECRET) {
+  console.warn('[warn] AUTH_MODE=jwt but JWT_SECRET not set — all tokens invalidated on restart, set JWT_SECRET in .env');
+}
 const CONFIG_PATH = process.env.OPENCLAW_CONFIG_PATH || '/config/openclaw.json';
 const HERMES_CONFIG_PATH = process.env.HERMES_CONFIG_PATH || '/config/hermes.yaml';
 const LOG_DIR = process.env.LOG_DIR || '/data/logs';
@@ -111,10 +114,10 @@ setInterval(async () => {
     const nowUp = s.running && s.healthy;
     if (lastState[name] !== null && lastState[name] !== nowUp) {
       if (nowUp) {
-        sendAlert(`🟢 SelfClawy: ${name} is back online!`);
+        sendAlert(`🟢 Beacon: ${name} is back online!`);
         db.addNotification('info', `${name} is back online`, `${name} container running`);
       } else {
-        sendAlert(`🔴 SelfClawy: ${name} went offline!`);
+        sendAlert(`🔴 Beacon: ${name} went offline!`);
         db.addNotification('alert', `${name} went offline`, `${name} container stopped`);
       }
     }
@@ -162,7 +165,7 @@ function jwtAuth(req, res, next) {
   try { req.user = jwt.verify(token, JWT_SECRET); next(); }
   catch (_) { res.status(401).json({ error: 'Invalid token' }); }
 }
-const basicAuthMiddleware = basicAuth({ users: { admin: PASSWORD }, challenge: true, realm: 'SelfClawy Dashboard' });
+const basicAuthMiddleware = basicAuth({ users: { admin: PASSWORD }, challenge: true, realm: 'Beacon Dashboard' });
 function auth(req, res, next) {
   return AUTH_MODE === 'jwt' ? jwtAuth(req, res, next) : basicAuthMiddleware(req, res, next);
 }
@@ -307,8 +310,8 @@ app.post('/api/ollama/pull', auth, verifyCsrf, async (req, res) => {
     });
     r.body.on('data', (chunk) => res.write(`data: ${chunk.toString('utf8')}\n\n`));
     r.body.on('end', () => { res.write('data: {"status":"done"}\n\n'); res.end(); });
-    r.body.on('error', (e) => { res.write(`data: {"error":"${e.message}"}\n\n`); res.end(); });
-  } catch (err) { res.write(`data: {"error":"${err.message}"}\n\n`); res.end(); }
+    r.body.on('error', (e) => { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); res.end(); });
+  } catch (err) { res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`); res.end(); }
 });
 
 // ── Metrics ───────────────────────────────────────────────────────────────────
@@ -319,21 +322,21 @@ app.get('/api/metrics', auth, (req, res) => {
 app.get('/metrics', auth, (req, res) => {
   res.setHeader('Content-Type', 'text/plain; version=0.0.4');
   const lines = [
-    '# HELP selfclawy_container_up Whether the backend container is running',
-    '# TYPE selfclawy_container_up gauge',
-    ...Object.entries(backendUp).map(([b, v]) => `selfclawy_container_up{backend="${b}"} ${v}`),
-    '# HELP selfclawy_uptime_seconds Container uptime in seconds',
-    '# TYPE selfclawy_uptime_seconds gauge',
-    ...Object.entries(backendUptime).map(([b, v]) => `selfclawy_uptime_seconds{backend="${b}"} ${v}`),
-    '# HELP selfclawy_tokens_today Tokens used today',
-    '# TYPE selfclawy_tokens_today counter',
-    `selfclawy_tokens_today ${metrics.tokensToday}`,
-    '# HELP selfclawy_errors_total Log error lines counted',
-    '# TYPE selfclawy_errors_total counter',
-    `selfclawy_errors_total ${metrics.errorsTotal}`,
-    '# HELP selfclawy_requests_total Dashboard API requests',
-    '# TYPE selfclawy_requests_total counter',
-    `selfclawy_requests_total ${metrics.requestsTotal}`,
+    '# HELP beacon_container_up Whether the backend container is running',
+    '# TYPE beacon_container_up gauge',
+    ...Object.entries(backendUp).map(([b, v]) => `beacon_container_up{backend="${b}"} ${v}`),
+    '# HELP beacon_uptime_seconds Container uptime in seconds',
+    '# TYPE beacon_uptime_seconds gauge',
+    ...Object.entries(backendUptime).map(([b, v]) => `beacon_uptime_seconds{backend="${b}"} ${v}`),
+    '# HELP beacon_tokens_today Tokens used today',
+    '# TYPE beacon_tokens_today counter',
+    `beacon_tokens_today ${metrics.tokensToday}`,
+    '# HELP beacon_errors_total Log error lines counted',
+    '# TYPE beacon_errors_total counter',
+    `beacon_errors_total ${metrics.errorsTotal}`,
+    '# HELP beacon_requests_total Dashboard API requests',
+    '# TYPE beacon_requests_total counter',
+    `beacon_requests_total ${metrics.requestsTotal}`,
   ];
   res.send(lines.join('\n'));
 });
@@ -341,8 +344,10 @@ app.get('/metrics', auth, (req, res) => {
 // ── Backup ────────────────────────────────────────────────────────────────────
 app.post('/api/backup', auth, verifyCsrf, (req, res) => {
   const date = new Date().toISOString().slice(0, 10);
-  const backend = req.query.backend || 'openclaw';
-  const volume = backend === 'hermes' ? 'selfclawy_hermes_data' : 'selfclawy_openclaw_data';
+  const VALID_BACKENDS = ['openclaw', 'hermes', 'ollama'];
+  const backend = VALID_BACKENDS.includes(req.query.backend) ? req.query.backend : 'openclaw';
+  const VOLUME_MAP = { openclaw: 'selfclawy_openclaw_data', hermes: 'selfclawy_hermes_data', ollama: 'selfclawy_ollama_data' };
+  const volume = VOLUME_MAP[backend];
   const filename = `${backend}-backup-${date}.tar.gz`;
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Type', 'application/gzip');
@@ -363,7 +368,9 @@ io.use((socket, next) => {
     const b64 = authHeader.startsWith('Basic ') ? authHeader.slice(6) : '';
     if (!b64) return next(new Error('Unauthorized'));
     try {
-      const [, pass] = Buffer.from(b64, 'base64').toString().split(':');
+      const decoded = Buffer.from(b64, 'base64').toString();
+      const colonIdx = decoded.indexOf(':');
+      const pass = colonIdx >= 0 ? decoded.slice(colonIdx + 1) : '';
       if (pass === PASSWORD) next();
       else next(new Error('Unauthorized'));
     } catch { next(new Error('Unauthorized')); }
@@ -397,6 +404,7 @@ io.on('connection', (socket) => {
           db.upsertDailyMetrics(new Date().toISOString().slice(0, 10), backend, { tokens: n });
         }
         lineBuffer += raw;
+        if (lineBuffer.length > 200_000) lineBuffer = lineBuffer.slice(-100_000);
         const lines = lineBuffer.split('\n');
         lineBuffer = lines.pop();
         for (const line of lines) parseLogLine(line.trim(), backend, db.insertConversation);
@@ -557,6 +565,15 @@ app.delete('/api/mcp/servers/:id', auth, verifyCsrf, (req, res) => {
   res.json({ ok: true });
 });
 
+app.patch('/api/mcp/servers/:id/toggle', auth, verifyCsrf, (req, res) => {
+  const server = db.getMcpServers().find(s => s.id === parseInt(req.params.id));
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  const enabled = !server.enabled;
+  db.toggleMcpServer(parseInt(req.params.id), enabled);
+  db.addAudit(req.user?.username || 'admin', enabled ? 'enable_mcp_server' : 'disable_mcp_server', server.name, 'ok', req.ip);
+  res.json({ ok: true, enabled });
+});
+
 app.post('/api/mcp/servers/:id/test', auth, async (req, res) => {
   const servers = db.getMcpServers();
   const server = servers.find(s => s.id === parseInt(req.params.id));
@@ -660,6 +677,14 @@ app.delete('/api/routing/:id', auth, verifyCsrf, (req, res) => {
   res.json({ ok: true });
 });
 
+app.patch('/api/routing/:id/toggle', auth, verifyCsrf, (req, res) => {
+  const rule = db.getRoutingRules().find(r => r.id === parseInt(req.params.id));
+  if (!rule) return res.status(404).json({ error: 'Not found' });
+  const enabled = !rule.enabled;
+  db.toggleRoutingRule(parseInt(req.params.id), enabled);
+  res.json({ ok: true, enabled });
+});
+
 // ── Presets ───────────────────────────────────────────────────────────────────
 app.get('/api/presets', auth, (req, res) => { res.json(db.getPresets()); });
 
@@ -723,4 +748,4 @@ app.get('/api/version', auth, async (req, res) => {
   res.json({ current, latest: _latestCache, updateAvailable: _latestCache && _latestCache !== current });
 });
 
-httpServer.listen(PORT, () => console.log(`SelfClawy dashboard running at http://localhost:${PORT}`));
+httpServer.listen(PORT, () => console.log(`Beacon dashboard running at http://localhost:${PORT}`));
