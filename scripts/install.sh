@@ -119,6 +119,42 @@ configure() {
   fi
 
   echo ""
+  echo -e "${BOLD}  Optional backends (adds to docker-compose):${NC}"
+  echo -e "    a) OpenClaw only  — lightweight Node.js gateway (default)"
+  echo -e "    b) + Hermes Agent — Python gateway with memory, skills, cron (~180s startup)"
+  echo -e "    c) + Ollama       — local LLM runner; use Hermes-3 with zero API cost (needs 8+ GB RAM)"
+  echo -e "    d) Both Hermes + Ollama"
+  read -rp "  Your choice [a]: " backend_choice
+
+  compose_profiles=""
+  case "$backend_choice" in
+    b|B) compose_profiles="hermes" ;;
+    c|C) compose_profiles="ollama" ;;
+    d|D) compose_profiles="hermes,ollama" ;;
+    *) compose_profiles="" ;;
+  esac
+
+  if [[ -n "$compose_profiles" ]]; then
+    sed -i "s|COMPOSE_PROFILES=.*|COMPOSE_PROFILES=$compose_profiles|" .env
+    echo -e "  ${GREEN}✓ Profiles: $compose_profiles${NC}"
+  fi
+
+  if [[ "$compose_profiles" == *"hermes"* ]]; then
+    hermes_secret=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p)
+    sed -i "s|HERMES_SECRET=.*|HERMES_SECRET=$hermes_secret|" .env
+    if [[ "$compose_profiles" == *"ollama"* ]]; then
+      sed -i "s|OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=http://ollama:11434|" .env
+      echo -e "  ${GREEN}✓ Hermes configured to use Ollama for local models${NC}"
+    fi
+    echo -e "  ${YELLOW}Note: Hermes Agent takes ~3 min to install on first start${NC}"
+  fi
+
+  if [[ "$compose_profiles" == *"ollama"* ]] && command -v nvidia-smi &>/dev/null; then
+    echo -e "  ${GREEN}✓ NVIDIA GPU detected — for GPU acceleration, use:${NC}"
+    echo -e "  ${CYAN}  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d${NC}"
+  fi
+
+  echo ""
   echo -e "${GREEN}✓ .env configured${NC}"
 }
 
@@ -138,8 +174,16 @@ print_success() {
   echo -e "${GREEN}${BOLD}  SelfClawy is running! 🦞${NC}"
   echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
-  echo -e "  OpenClaw dashboard:  ${CYAN}http://$server_ip:18789${NC}"
+  echo -e "  OpenClaw gateway:    ${CYAN}http://$server_ip:18789${NC}"
   echo -e "  SelfClawy dashboard: ${CYAN}http://$server_ip:3001${NC}"
+  if grep -q "hermes" "$INSTALL_DIR/.env" 2>/dev/null && grep -q "COMPOSE_PROFILES=.*hermes" "$INSTALL_DIR/.env" 2>/dev/null; then
+    hermes_port=$(grep "^HERMES_PORT=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "8080")
+    echo -e "  Hermes Agent UI:     ${CYAN}http://$server_ip:${hermes_port:-8080}${NC}"
+  fi
+  if grep -q "COMPOSE_PROFILES=.*ollama" "$INSTALL_DIR/.env" 2>/dev/null; then
+    ollama_port=$(grep "^OLLAMA_PORT=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "11434")
+    echo -e "  Ollama API:          ${CYAN}http://$server_ip:${ollama_port:-11434}${NC}"
+  fi
   echo ""
   echo -e "  ${BOLD}Next steps:${NC}"
   echo -e "  1. Open the dashboard and verify the gateway is running"

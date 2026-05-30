@@ -1,0 +1,23 @@
+gateway:
+  port: 8080
+  secret: "${HERMES_SECRET}"
+
+providers:
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: "${ANTHROPIC_MODEL:-claude-sonnet-4-6}"
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+  ollama:
+    base_url: "${OLLAMA_BASE_URL:-http://ollama:11434}"
+
+channels:
+  telegram:
+    token: "${TELEGRAM_TOKEN}"
+    allow_from: "${OPENCLAW_ALLOW_FROM}"
+  discord:
+    token: "${DISCORD_TOKEN}"
+
+memory:
+  enabled: true
+  path: ~/.hermes/memory

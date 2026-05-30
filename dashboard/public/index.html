@@ -9,16 +9,17 @@
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
       --bg:#0d0f14;--surface:#13161e;--border:#1e2330;--accent:#ff5a36;--accent-dim:rgba(255,90,54,0.12);
-      --green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#eab308;--text:#e2e8f0;--muted:#64748b;
-      --mono:'Fira Mono',monospace;--shadow:0 2px 12px rgba(0,0,0,.4)
+      --green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#eab308;--blue:#60a5fa;--blue-dim:rgba(96,165,250,0.12);
+      --text:#e2e8f0;--muted:#64748b;--mono:'Fira Mono',monospace;--shadow:0 2px 12px rgba(0,0,0,.4)
     }
     [data-theme="light"]{
       --bg:#f1f5f9;--surface:#ffffff;--border:#e2e8f0;--accent:#e04a2a;--accent-dim:rgba(224,74,42,0.1);
-      --green:#16a34a;--green-dim:rgba(22,163,74,0.1);--yellow:#ca8a04;--text:#1e293b;--muted:#94a3b8;
-      --shadow:0 2px 12px rgba(0,0,0,.08)
+      --green:#16a34a;--green-dim:rgba(22,163,74,0.1);--yellow:#ca8a04;--blue:#2563eb;--blue-dim:rgba(37,99,235,0.1);
+      --text:#1e293b;--muted:#94a3b8;--shadow:0 2px 12px rgba(0,0,0,.08)
     }
     body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;transition:background .2s,color .2s}
-    /* ── Login screen ── */
+
+    /* ── Login ─────────────────────────────────────────────────────────────── */
     #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem}
     .login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2.5rem;width:100%;max-width:380px;box-shadow:var(--shadow)}
     .login-logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.2rem;margin-bottom:2rem}
@@ -29,8 +30,9 @@
     .field input{width:100%;padding:.65rem .9rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.95rem;outline:none;transition:border-color .15s}
     .field input:focus{border-color:var(--accent)}
     #login-error{color:#ef4444;font-size:.82rem;margin-bottom:.75rem;min-height:1.2em}
-    /* ── Header ── */
-    header{display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;border-bottom:1px solid var(--border);background:var(--surface)}
+
+    /* ── Header ────────────────────────────────────────────────────────────── */
+    header{display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;gap:.5rem}
     .logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.1rem}
     .logo span{color:var(--accent)}
     .header-right{display:flex;align-items:center;gap:.75rem}
@@ -39,17 +41,39 @@
     .pill.offline{background:var(--accent-dim);color:var(--accent)}
     .pill.loading{background:rgba(234,179,8,.12);color:var(--yellow)}
     .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
-    /* ── Theme toggle ── */
     .theme-btn{background:var(--border);border:none;border-radius:8px;padding:.4rem .65rem;cursor:pointer;font-size:1rem;color:var(--text);line-height:1;transition:background .15s}
     .theme-btn:hover{background:var(--accent-dim)}
-    /* ── Main layout ── */
+
+    /* ── Layout ────────────────────────────────────────────────────────────── */
     main{max-width:1000px;margin:0 auto;padding:2rem}
-    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:2rem}
-    .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem;transition:border-color .15s}
+
+    /* ── Backend tabs ──────────────────────────────────────────────────────── */
+    .section-label{font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.6rem}
+    .backend-tabs{display:flex;gap:.4rem;margin-bottom:1.5rem;flex-wrap:wrap}
+    .backend-tab{display:flex;align-items:center;gap:.4rem;padding:.45rem 1.1rem;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:.82rem;font-weight:600;cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.04em}
+    .backend-tab:hover{border-color:var(--blue);color:var(--text)}
+    .backend-tab.active{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
+    .tab-indicator{width:7px;height:7px;border-radius:50%;background:var(--border);flex-shrink:0}
+    .backend-tab.tab-online .tab-indicator{background:var(--green)}
+    .backend-tab.tab-offline .tab-indicator{background:var(--muted)}
+    .backend-tab.tab-starting .tab-indicator{background:var(--yellow)}
+
+    /* ── Stat cards ────────────────────────────────────────────────────────── */
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:2rem}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem}
     .card-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem}
     .card-value{font-size:1.5rem;font-weight:700}
     .card-value.green{color:var(--green)}
-    /* ── Controls row ── */
+    .card-value.blue{color:var(--blue)}
+    .card-value.red{color:#f87171}
+
+    /* ── Model switcher ────────────────────────────────────────────────────── */
+    .model-row{display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap}
+    .model-row label{font-size:.82rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    select{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.5rem .9rem;color:var(--text);font-size:.88rem;cursor:pointer;outline:none}
+    select:focus{border-color:var(--accent)}
+
+    /* ── Controls ──────────────────────────────────────────────────────────── */
     .controls{display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap;align-items:center}
     button{padding:.6rem 1.4rem;border-radius:8px;border:none;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .15s,transform .1s;color:inherit}
     button:active{transform:scale(.97)}
@@ -57,36 +81,50 @@
     .btn-primary{background:var(--accent);color:#fff}
     .btn-ghost{background:var(--border);color:var(--text)}
     .btn-danger{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
-    .btn-backup{background:rgba(96,165,250,.12);color:#60a5fa;border:1px solid rgba(96,165,250,.3)}
-    /* ── Model switcher ── */
-    .model-row{display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap}
-    .model-row label{font-size:.82rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-    select{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.5rem .9rem;color:var(--text);font-size:.88rem;cursor:pointer;outline:none}
-    select:focus{border-color:var(--accent)}
-    /* ── Log viewer ── */
+    .btn-blue{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,.3)}
+
+    /* ── Hermes panel ──────────────────────────────────────────────────────── */
+    .hermes-panel,.ollama-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-bottom:1.5rem;display:none}
+    .hermes-panel.visible,.ollama-panel.visible{display:block}
+    .panel-title{font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.9rem}
+    .migrate-result{font-family:var(--mono);font-size:.75rem;color:var(--muted);margin-top:.75rem;max-height:120px;overflow-y:auto;white-space:pre-wrap;background:var(--bg);border-radius:6px;padding:.5rem}
+
+    /* ── Ollama panel ──────────────────────────────────────────────────────── */
+    .model-list{list-style:none;margin-bottom:1rem;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+    .model-list li{font-size:.85rem;padding:.5rem .75rem;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--mono);display:flex;justify-content:space-between;align-items:center}
+    .model-list li:last-child{border:none}
+    .model-list li.empty{color:var(--muted);font-family:inherit;font-size:.82rem}
+    .pull-row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.5rem}
+    .pull-row input{flex:1;min-width:160px;padding:.5rem .9rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.88rem;outline:none}
+    .pull-row input:focus{border-color:var(--accent)}
+    #pull-progress{font-size:.75rem;color:var(--muted);font-family:var(--mono)}
+
+    /* ── Log viewer ────────────────────────────────────────────────────────── */
     .log-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:1.5rem}
     .log-header{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;border-bottom:1px solid var(--border);font-size:.8rem;color:var(--muted)}
-    .log-header .dots{display:flex;gap:6px}
+    .log-dots{display:flex;gap:6px}
     .dot-r{width:10px;height:10px;border-radius:50%;background:#ef4444}
     .dot-y{width:10px;height:10px;border-radius:50%;background:var(--yellow)}
     .dot-g{width:10px;height:10px;border-radius:50%;background:var(--green)}
-    #log{font-family:var(--mono);font-size:.8rem;color:#94a3b8;padding:1rem;height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6}
-    .line-ok{color:var(--green)}.line-err{color:#f87171}.line-warn{color:var(--yellow)}.line-info{color:#60a5fa}
-    /* ── Link cards ── */
+    #log{font-family:var(--mono);font-size:.8rem;color:#94a3b8;padding:1rem;height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6}
+    .line-ok{color:var(--green)}.line-err{color:#f87171}.line-warn{color:var(--yellow)}.line-info{color:var(--blue)}
+
+    /* ── Links ─────────────────────────────────────────────────────────────── */
     .links{display:flex;gap:1rem;flex-wrap:wrap}
-    .link-card{flex:1;min-width:170px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:border-color .15s;display:flex;align-items:center;gap:.75rem}
+    .link-card{flex:1;min-width:160px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:border-color .15s;display:flex;align-items:center;gap:.75rem}
     .link-card:hover{border-color:var(--accent)}
     .link-icon{font-size:1.4rem}
     .link-label{font-size:.85rem;font-weight:600}
     .link-sub{font-size:.72rem;color:var(--muted)}
-    /* ── Toast ── */
+
+    /* ── Toast ─────────────────────────────────────────────────────────────── */
     #toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem 1.2rem;font-size:.85rem;box-shadow:var(--shadow);opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s;pointer-events:none;z-index:100}
     #toast.show{opacity:1;transform:translateY(0)}
   </style>
 </head>
 <body>
 
-<!-- ── Login screen (JWT mode) ─────────────────────────────────────────── -->
+<!-- ── Login (JWT mode) ─────────────────────────────────────────────────────── -->
 <div id="login-screen" style="display:none">
   <div class="login-card">
     <div class="login-logo"><span style="font-size:1.6rem">🦞</span><div>Self<span>Clawy</span></div></div>
@@ -98,7 +136,7 @@
   </div>
 </div>
 
-<!-- ── Main dashboard ──────────────────────────────────────────────────── -->
+<!-- ── Main dashboard ───────────────────────────────────────────────────────── -->
 <div id="app" style="display:none">
 <header>
   <div class="logo"><span style="font-size:1.4rem">🦞</span><div>Self<span>Clawy</span> <span style="color:var(--muted);font-weight:400;font-size:.85rem">dashboard</span></div></div>
@@ -107,27 +145,52 @@
     <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">🌙</button>
   </div>
 </header>
+
 <main>
+  <!-- Backend tabs -->
+  <div class="section-label">Backend</div>
+  <div class="backend-tabs" id="backend-tabs">
+    <button class="backend-tab active tab-offline" data-backend="openclaw" onclick="switchBackend('openclaw')">
+      <span class="tab-indicator"></span>OpenClaw
+    </button>
+    <button class="backend-tab tab-offline" data-backend="hermes" onclick="switchBackend('hermes')">
+      <span class="tab-indicator"></span>Hermes Agent
+    </button>
+    <button class="backend-tab tab-offline" data-backend="ollama" onclick="switchBackend('ollama')">
+      <span class="tab-indicator"></span>Ollama
+    </button>
+  </div>
+
   <!-- Stat cards -->
   <div class="cards">
     <div class="card"><div class="card-label">Status</div><div class="card-value" id="stat-status">—</div></div>
     <div class="card"><div class="card-label">Uptime</div><div class="card-value green" id="stat-uptime">—</div></div>
     <div class="card"><div class="card-label">Gateway Health</div><div class="card-value" id="stat-health">—</div></div>
-    <div class="card"><div class="card-label">Started At</div><div class="card-value" style="font-size:1rem;padding-top:.3rem" id="stat-started">—</div></div>
-    <div class="card"><div class="card-label">Tokens Today</div><div class="card-value" id="stat-tokens" style="color:#60a5fa">—</div></div>
-    <div class="card"><div class="card-label">Log Errors</div><div class="card-value" id="stat-errors" style="color:#f87171">—</div></div>
+    <div class="card"><div class="card-label">Started At</div><div class="card-value" style="font-size:.95rem;padding-top:.3rem" id="stat-started">—</div></div>
+    <div class="card"><div class="card-label">Tokens Today</div><div class="card-value blue" id="stat-tokens">—</div></div>
+    <div class="card"><div class="card-label">Log Errors</div><div class="card-value red" id="stat-errors">—</div></div>
   </div>
 
   <!-- Model switcher -->
   <div class="model-row">
     <label>Model</label>
     <select id="model-select" onchange="switchModel()">
-      <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-      <option value="claude-opus-4-8">Claude Opus 4.8</option>
-      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-      <option value="gpt-4o">GPT-4o</option>
-      <option value="gpt-4o-mini">GPT-4o mini</option>
-      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+      <optgroup label="Claude (Anthropic)">
+        <option value="claude-sonnet-4-6|anthropic">Claude Sonnet 4.6</option>
+        <option value="claude-opus-4-8|anthropic">Claude Opus 4.8</option>
+        <option value="claude-haiku-4-5-20251001|anthropic">Claude Haiku 4.5</option>
+      </optgroup>
+      <optgroup label="OpenAI">
+        <option value="gpt-4o|openai">GPT-4o</option>
+        <option value="gpt-4o-mini|openai">GPT-4o mini</option>
+      </optgroup>
+      <optgroup label="Google">
+        <option value="gemini-2.0-flash|gemini">Gemini 2.0 Flash</option>
+      </optgroup>
+      <optgroup label="Local (Ollama)" id="ollama-model-opts">
+        <option value="nous-hermes3|ollama">Hermes 3 8B (local)</option>
+        <option value="nous-hermes3:70b|ollama">Hermes 3 70B (local)</option>
+      </optgroup>
     </select>
     <span id="model-status" style="font-size:.78rem;color:var(--muted)"></span>
   </div>
@@ -137,14 +200,34 @@
     <button class="btn-primary" id="btn-start" onclick="action('start')">▶ Start</button>
     <button class="btn-ghost" id="btn-restart" onclick="action('restart')">↺ Restart</button>
     <button class="btn-danger" id="btn-stop" onclick="action('stop')">■ Stop</button>
-    <button class="btn-backup" onclick="backup()">⬇ Backup</button>
+    <button class="btn-blue" onclick="backup()">⬇ Backup</button>
+  </div>
+
+  <!-- Hermes-specific panel -->
+  <div class="hermes-panel" id="hermes-panel">
+    <div class="panel-title">Hermes Agent Tools</div>
+    <button class="btn-ghost" onclick="hermsMigrate()">↻ Import from OpenClaw</button>
+    <div class="migrate-result" id="migrate-result" style="display:none"></div>
+  </div>
+
+  <!-- Ollama model management panel -->
+  <div class="ollama-panel" id="ollama-panel">
+    <div class="panel-title">Ollama Models</div>
+    <ul class="model-list" id="ollama-model-list">
+      <li class="empty">Loading…</li>
+    </ul>
+    <div class="pull-row">
+      <input id="pull-input" type="text" placeholder="nous-hermes3" value="nous-hermes3">
+      <button class="btn-primary" onclick="pullModel()">⬇ Pull</button>
+    </div>
+    <div id="pull-progress"></div>
   </div>
 
   <!-- Log viewer -->
   <div class="log-wrap">
     <div class="log-header">
-      <div class="dots"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div></div>
-      <span>openclaw — live logs</span>
+      <div class="log-dots"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div></div>
+      <span id="log-label">openclaw — live logs</span>
       <button class="btn-ghost" style="padding:.2rem .7rem;font-size:.75rem" onclick="clearLog()">Clear</button>
     </div>
     <div id="log"></div>
@@ -152,9 +235,9 @@
 
   <!-- Quick links -->
   <div class="links">
-    <a class="link-card" href="#" onclick="openGateway();return false"><span class="link-icon">🌐</span><div><div class="link-label">OpenClaw UI</div><div class="link-sub">Open gateway dashboard</div></div></a>
+    <a class="link-card" href="#" onclick="openGateway();return false"><span class="link-icon">🌐</span><div><div class="link-label" id="gateway-label">OpenClaw UI</div><div class="link-sub">Open gateway dashboard</div></div></a>
     <a class="link-card" href="https://docs.openclaw.ai" target="_blank"><span class="link-icon">📖</span><div><div class="link-label">Documentation</div><div class="link-sub">docs.openclaw.ai</div></div></a>
-    <a class="link-card" href="https://github.com/hbkdad/selfclawy" target="_blank"><span class="link-icon">🐙</span><div><div class="link-label">GitHub</div><div class="link-sub">Source code</div></div></a>
+    <a class="link-card" href="https://github.com/hbkdad/selfclawy" target="_blank"><span class="link-icon">🐙</span><div><div class="link-label">GitHub</div><div class="link-sub">hbkdad/selfclawy</div></div></a>
   </div>
 </main>
 </div>
@@ -162,20 +245,18 @@
 <div id="toast"></div>
 
 <script>
-// ── Auth helpers ──────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 let authToken = localStorage.getItem('sc-token') || null;
 
 function csrfToken() {
   const m = document.cookie.match(/csrf-token=([a-f0-9]+)/);
   return m ? m[1] : '';
 }
-
 function headers(extra) {
   const h = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() };
   if (authToken) h['Authorization'] = 'Bearer ' + authToken;
   return Object.assign(h, extra);
 }
-
 async function apiFetch(url, opts) {
   opts = opts || {};
   opts.headers = headers(opts.headers);
@@ -184,7 +265,6 @@ async function apiFetch(url, opts) {
   return r;
 }
 
-// ── Login / logout ────────────────────────────────────────────────────────────
 async function login() {
   const user = document.getElementById('l-user').value;
   const pass = document.getElementById('l-pass').value;
@@ -203,7 +283,6 @@ async function login() {
     showApp();
   } catch(e) { err.textContent = 'Network error.'; }
 }
-
 function logout() {
   authToken = null;
   localStorage.removeItem('sc-token');
@@ -211,12 +290,10 @@ function logout() {
   document.getElementById('login-screen').style.display = 'flex';
 }
 
-// ── Boot: detect auth mode ────────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────────────────
 (async function boot() {
-  // Try GET /api/status — if 401, show login; if 200 (basic auth handled by browser), show app
   const r = await fetch('/api/status');
   if (r.status === 401 && !authToken) {
-    // JWT mode — show login screen
     document.getElementById('login-screen').style.display = 'flex';
   } else {
     showApp();
@@ -226,30 +303,81 @@ function logout() {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
+  applyTheme();
   initSocket();
+  loadBackends();
   loadConfig();
   poll();
   setInterval(poll, 10000);
+  setInterval(loadBackends, 15000);
 }
 
-// ── Theme toggle ──────────────────────────────────────────────────────────────
+// ── Theme ─────────────────────────────────────────────────────────────────────
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
 let isDark = localStorage.getItem('sc-theme') ? localStorage.getItem('sc-theme') === 'dark' : prefersDark.matches;
-
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
   const btn = document.querySelector('.theme-btn');
   if (btn) btn.textContent = isDark ? '🌙' : '☀️';
 }
-applyTheme();
-
 function toggleTheme() {
   isDark = !isDark;
   localStorage.setItem('sc-theme', isDark ? 'dark' : 'light');
   applyTheme();
 }
 
-// ── Socket.io log streaming ───────────────────────────────────────────────────
+// ── Backend state ─────────────────────────────────────────────────────────────
+let activeBackend = 'openclaw';
+
+const BACKEND_META = {
+  openclaw: { label: 'OpenClaw UI',   port: 18789 },
+  hermes:   { label: 'Hermes UI',     port: 8080  },
+  ollama:   { label: 'Ollama API',    port: 11434 },
+};
+
+async function loadBackends() {
+  try {
+    const r = await apiFetch('/api/backends');
+    if (!r || !r.ok) return;
+    const data = await r.json();
+    activeBackend = data.activeBackend || 'openclaw';
+    for (const [name, info] of Object.entries(data.backends)) {
+      const btn = document.querySelector(`[data-backend="${name}"]`);
+      if (!btn) continue;
+      btn.className = 'backend-tab' + (name === activeBackend ? ' active' : '');
+      if (info.running && info.healthy) btn.classList.add('tab-online');
+      else if (info.running) btn.classList.add('tab-starting');
+      else btn.classList.add('tab-offline');
+    }
+    updateBackendUI();
+  } catch(_) {}
+}
+
+function updateBackendUI() {
+  const meta = BACKEND_META[activeBackend] || BACKEND_META.openclaw;
+  document.getElementById('log-label').textContent = `${activeBackend} — live logs`;
+  document.getElementById('gateway-label').textContent = meta.label;
+  document.getElementById('hermes-panel').classList.toggle('visible', activeBackend === 'hermes');
+  document.getElementById('ollama-panel').classList.toggle('visible', activeBackend === 'ollama');
+  if (activeBackend === 'ollama') loadOllamaModels();
+}
+
+async function switchBackend(backend) {
+  if (backend === activeBackend) return;
+  const r = await apiFetch('/api/backend/switch', {
+    method: 'POST',
+    body: JSON.stringify({ backend })
+  });
+  if (r && r.ok) {
+    activeBackend = backend;
+    await loadBackends();
+    clearLog();
+    if (socket) socket.emit('subscribe-logs-backend', backend);
+    toast(`Switched to ${backend}`);
+  }
+}
+
+// ── Socket.io ─────────────────────────────────────────────────────────────────
 let socket;
 const logEl = document.getElementById('log');
 
@@ -266,14 +394,19 @@ function initSocket() {
     logEl.appendChild(s);
     logEl.scrollTop = logEl.scrollHeight;
   });
+  socket.on('backend-changed', ({ activeBackend: b }) => {
+    activeBackend = b;
+    clearLog();
+    loadBackends();
+  });
 }
-
 function clearLog() { logEl.innerHTML = ''; }
 
 // ── Status polling ────────────────────────────────────────────────────────────
 async function poll() {
+  const url = activeBackend === 'openclaw' ? '/api/status' : `/api/status/${activeBackend}`;
   try {
-    const r = await apiFetch('/api/status');
+    const r = await apiFetch(url);
     if (!r) return;
     const d = await r.json();
     const pill = document.getElementById('status-pill');
@@ -286,8 +419,8 @@ async function poll() {
     const u = d.uptime;
     document.getElementById('stat-uptime').textContent = u ? `${Math.floor(u/3600)}h ${Math.floor((u%3600)/60)}m ${u%60}s` : '—';
     document.getElementById('stat-started').textContent = d.startedAt ? new Date(d.startedAt).toLocaleString() : '—';
-    document.getElementById('stat-tokens').textContent = d.tokensToday != null ? d.tokensToday.toLocaleString() : '—';
-    document.getElementById('stat-errors').textContent = d.errorsTotal != null ? d.errorsTotal : '—';
+    if (d.tokensToday != null) document.getElementById('stat-tokens').textContent = d.tokensToday.toLocaleString();
+    if (d.errorsTotal != null) document.getElementById('stat-errors').textContent = d.errorsTotal;
     document.getElementById('btn-start').disabled = d.running;
     document.getElementById('btn-stop').disabled = !d.running;
     document.getElementById('btn-restart').disabled = !d.running;
@@ -301,11 +434,17 @@ async function poll() {
 async function action(cmd) {
   const btn = document.getElementById(`btn-${cmd}`);
   btn.disabled = true; btn.textContent = '…';
+  const url = activeBackend === 'openclaw' ? `/api/${cmd}` : `/api/${activeBackend}/${cmd}`;
   try {
-    await apiFetch(`/api/${cmd}`, { method: 'POST' });
+    await apiFetch(url, { method: 'POST' });
     setTimeout(poll, 1500);
   } catch(e) { toast('Error: ' + e.message); }
-  finally { setTimeout(() => { btn.disabled = false; btn.textContent = {start:'▶ Start',stop:'■ Stop',restart:'↺ Restart'}[cmd]; }, 2000); }
+  finally {
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = { start: '▶ Start', stop: '■ Stop', restart: '↺ Restart' }[cmd];
+    }, 2000);
+  }
 }
 
 // ── Model switcher ────────────────────────────────────────────────────────────
@@ -316,17 +455,19 @@ async function loadConfig() {
     const cfg = await r.json();
     const activeProvider = Object.keys(cfg.providers || {})[0];
     if (activeProvider && cfg.providers[activeProvider].model) {
-      const sel = document.getElementById('model-select');
       const model = cfg.providers[activeProvider].model;
-      for (const opt of sel.options) { if (opt.value === model) { sel.value = model; break; } }
+      const sel = document.getElementById('model-select');
+      for (const opt of sel.options) {
+        if (opt.value.startsWith(model + '|')) { sel.value = opt.value; break; }
+      }
       document.getElementById('model-status').textContent = `(${activeProvider})`;
     }
   } catch(_) {}
 }
 
 async function switchModel() {
-  const model = document.getElementById('model-select').value;
-  const provider = model.startsWith('gpt') ? 'openai' : model.startsWith('gemini') ? 'gemini' : 'anthropic';
+  const val = document.getElementById('model-select').value;
+  const [model, provider] = val.split('|');
   const r = await apiFetch('/api/config', {
     method: 'POST',
     body: JSON.stringify({ provider, model })
@@ -341,15 +482,87 @@ async function switchModel() {
 async function backup() {
   toast('Preparing backup…');
   try {
-    const r = await apiFetch('/api/backup', { method: 'POST' });
+    const r = await apiFetch(`/api/backup?backend=${activeBackend}`, { method: 'POST' });
     if (!r || !r.ok) { toast('Backup failed.'); return; }
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `openclaw-backup-${new Date().toISOString().slice(0,10)}.tar.gz`;
-    a.click(); URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = `${activeBackend}-backup-${new Date().toISOString().slice(0,10)}.tar.gz`;
+    a.click();
+    URL.revokeObjectURL(url);
     toast('Backup downloaded.');
   } catch(e) { toast('Backup error: ' + e.message); }
+}
+
+// ── Hermes: migrate from OpenClaw ─────────────────────────────────────────────
+async function hermsMigrate() {
+  const el = document.getElementById('migrate-result');
+  el.style.display = 'block';
+  el.textContent = 'Running hermes claw migrate…';
+  try {
+    const r = await apiFetch('/api/hermes/migrate', { method: 'POST' });
+    if (!r) return;
+    const d = await r.json();
+    el.textContent = d.output || (d.ok ? 'Migration complete.' : 'Error: ' + d.error);
+  } catch(e) { el.textContent = 'Error: ' + e.message; }
+}
+
+// ── Ollama model management ───────────────────────────────────────────────────
+async function loadOllamaModels() {
+  try {
+    const r = await apiFetch('/api/ollama/models');
+    if (!r || !r.ok) {
+      document.getElementById('ollama-model-list').innerHTML = '<li class="empty">Ollama not reachable — is it running?</li>';
+      return;
+    }
+    const data = await r.json();
+    const models = data.models || [];
+    const list = document.getElementById('ollama-model-list');
+    list.innerHTML = models.length
+      ? models.map(m => `<li><span>${m.name}</span><span style="color:var(--muted);font-size:.72rem">${(m.size/1e9).toFixed(1)} GB</span></li>`).join('')
+      : '<li class="empty">No models pulled yet — pull one below</li>';
+
+    // Also populate the model select optgroup
+    const optgroup = document.getElementById('ollama-model-opts');
+    if (models.length) {
+      optgroup.innerHTML = models.map(m => `<option value="${m.name}|ollama">${m.name} (local)</option>`).join('');
+    }
+  } catch(_) {}
+}
+
+async function pullModel() {
+  const model = document.getElementById('pull-input').value.trim();
+  if (!model) return;
+  const progress = document.getElementById('pull-progress');
+  progress.textContent = 'Starting pull…';
+  try {
+    const r = await apiFetch('/api/ollama/pull', { method: 'POST', body: JSON.stringify({ model }) });
+    if (!r) return;
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      for (const line of decoder.decode(value).split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const d = JSON.parse(line.slice(6));
+          if (d.error) { progress.textContent = 'Error: ' + d.error; return; }
+          if (d.status === 'done') { progress.textContent = ''; loadOllamaModels(); toast(model + ' ready.'); return; }
+          if (d.completed && d.total) {
+            progress.textContent = `${d.status}: ${Math.round(d.completed / d.total * 100)}%`;
+          } else { progress.textContent = d.status || ''; }
+        } catch(_) {}
+      }
+    }
+  } catch(e) { progress.textContent = 'Error: ' + e.message; }
+}
+
+// ── Gateway link ──────────────────────────────────────────────────────────────
+function openGateway() {
+  const port = (BACKEND_META[activeBackend] || BACKEND_META.openclaw).port;
+  window.open(`${location.protocol}//${location.hostname}:${port}`, '_blank');
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -360,8 +573,6 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
-
-function openGateway() { window.open(`${location.protocol}//${location.hostname}:18789`, '_blank'); }
 </script>
 </body>
 </html>
