@@ -216,6 +216,12 @@
     /* ── Cost chart ── */
     .chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.1rem;margin-bottom:1.1rem}
     #cost-chart{width:100%;height:120px;display:block}
+    .cost-row{display:flex;align-items:center;gap:.6rem;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.8rem}
+    .cost-row:last-child{border-bottom:none}
+    .cost-model{flex:1;font-family:var(--mono);color:var(--text)}
+    .cost-reqs{width:60px;text-align:right;color:var(--muted)}
+    .cost-tokens{width:80px;text-align:right;color:var(--blue)}
+    .cost-est{width:80px;text-align:right;color:var(--green);font-weight:600}
 
     /* ── Tables ── */
     .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:1.1rem}
@@ -568,6 +574,16 @@
       <canvas id="cost-chart"></canvas>
     </div>
 
+    <!-- Per-model cost breakdown -->
+    <div class="chart-wrap" id="cost-breakdown-wrap" style="display:none">
+      <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Cost Estimation by Model</span>
+        <span style="font-size:.7rem;color:var(--muted)">Based on conversation history</span>
+      </div>
+      <div id="cost-breakdown-table" style="margin-top:.6rem"></div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:.6rem">* Estimates based on public pricing. Actual costs may vary.</div>
+    </div>
+
     <!-- Log viewer -->
     <div class="log-wrap">
       <div class="log-header">
@@ -890,6 +906,7 @@ function showApp() {
   loadConfig();
   poll();
   loadChart();
+  loadCostBreakdown();
   loadNotifications();
   setInterval(poll, 10000);
   setInterval(loadBackends, 15000);
@@ -1214,6 +1231,47 @@ async function loadChart() {
       ctx.textAlign = 'center';
       ctx.fillText(day.slice(5), x + barW/2, H - 5);
     });
+  } catch(_) {}
+}
+
+// ── Per-model cost estimation ──────────────────────────────────────────────────
+const MODEL_PRICES = {
+  'claude-opus-4-8':           { in: 15,    out: 75    },
+  'claude-sonnet-4-6':         { in: 3,     out: 15    },
+  'claude-haiku-4-5-20251001': { in: 0.8,   out: 4     },
+  'gpt-4o':                    { in: 2.5,   out: 10    },
+  'gpt-4o-mini':               { in: 0.15,  out: 0.6   },
+  'gemini-2.0-flash':          { in: 0.1,   out: 0.4   },
+};
+function estimateCost(model, tokens) {
+  const p = MODEL_PRICES[model];
+  if (!p) return null;
+  const cost = (tokens / 1_000_000) * ((p.in + p.out) / 2);
+  return cost < 0.01 ? '<$0.01' : '$' + cost.toFixed(2);
+}
+async function loadCostBreakdown() {
+  try {
+    const r = await apiFetch('/api/metrics/by-model');
+    if (!r || !r.ok) return;
+    const rows = await r.json();
+    const wrap = document.getElementById('cost-breakdown-wrap');
+    const tbl = document.getElementById('cost-breakdown-table');
+    if (!rows.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    tbl.innerHTML = `
+      <div style="display:flex;gap:.6rem;font-size:.7rem;color:var(--muted);padding-bottom:.3rem;border-bottom:1px solid var(--border)">
+        <span style="flex:1">Model</span>
+        <span style="width:60px;text-align:right">Requests</span>
+        <span style="width:80px;text-align:right">Tokens</span>
+        <span style="width:80px;text-align:right">Est. Cost</span>
+      </div>` +
+      rows.map(row => `
+        <div class="cost-row">
+          <span class="cost-model">${escHtml(row.model)}</span>
+          <span class="cost-reqs">${(row.requests||0).toLocaleString()}</span>
+          <span class="cost-tokens">${(row.tokens||0).toLocaleString()}</span>
+          <span class="cost-est">${estimateCost(row.model, row.tokens) || '—'}</span>
+        </div>`).join('');
   } catch(_) {}
 }
 

@@ -88,13 +88,15 @@ services:
         max-file: "3"
 
   dashboard:
+    image: ghcr.io/hbkdad/beacon-dashboard:latest
     build:
       context: ./dashboard
       dockerfile: Dockerfile
     container_name: beacon-dashboard
     restart: unless-stopped
     depends_on:
-      - openclaw
+      openclaw:
+        condition: service_healthy
     environment:
       - OPENCLAW_URL=http://openclaw:18789
       - HERMES_URL=http://hermes:8080
