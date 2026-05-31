@@ -33,7 +33,8 @@ func main() {
 	banner()
 	go checkUpdate()
 	step("Checking Docker", checkDocker)
-	downloadIfMissing("docker-compose.yml", composeRaw)
+	// Always re-fetch compose file so fixes/updates are picked up on every run
+	step("Downloading docker-compose.yml", func() error { return download("docker-compose.yml", composeRaw) })
 	downloadIfMissing(".env", envRaw)
 	promptFirstRun()
 	runCompose("pull")
@@ -92,24 +93,26 @@ func checkDocker() error {
 	return nil
 }
 
+func download(dst, url string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return err
+}
+
 func downloadIfMissing(dst, url string) {
 	if _, err := os.Stat(dst); err == nil {
 		return
 	}
-	step("Downloading "+dst, func() error {
-		resp, err := http.Get(url)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		f, err := os.Create(dst)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		_, err = io.Copy(f, resp.Body)
-		return err
-	})
+	step("Downloading "+dst, func() error { return download(dst, url) })
 }
 
 func promptFirstRun() {
