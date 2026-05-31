@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.4.0)'
+        required: true
+        default: '1.4.0'
 
 permissions:
   contents: write
@@ -57,7 +63,7 @@ jobs:
         run: |
           mkdir -p dist
           cd launcher
-          VER="${{ github.ref_name }}"
+          VER="${{ github.event.inputs.version || github.ref_name }}"
           LDFLAGS="-s -w -X main.Version=${VER#v}"
           GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o ../dist/beacon-windows-amd64.exe .
           GOOS=linux   GOARCH=amd64 go build -ldflags="$LDFLAGS" -o ../dist/beacon-linux-amd64   .
@@ -68,7 +74,7 @@ jobs:
       - name: Extract changelog notes
         id: notes
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
           VERSION="${VERSION#v}"
           NOTES=$(awk "/^## \\[$VERSION\\]/,/^## \\[/" CHANGELOG.md | head -n -2 | tail -n +2)
           {
@@ -80,7 +86,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Beacon ${{ github.ref_name }}"
+          tag_name: "v${{ github.event.inputs.version || github.ref_name }}"
+          name: "Beacon v${{ github.event.inputs.version || github.ref_name }}"
           body: ${{ steps.notes.outputs.body }}
           draft: false
           prerelease: false
