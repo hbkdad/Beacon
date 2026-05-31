@@ -27,7 +27,7 @@ jobs:
         run: npm ci --prefer-offline
 
       - name: Lint
-        run: npx eslint server.js --rule '{"no-unused-vars":"warn"}' || true
+        run: npm run lint
 
       - name: Run tests
         run: npm test
