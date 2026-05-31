@@ -88,6 +88,7 @@ services:
         max-file: "3"
 
   dashboard:
+    image: ghcr.io/hbkdad/beacon-dashboard:latest
     build:
       context: ./dashboard
       dockerfile: Dockerfile
