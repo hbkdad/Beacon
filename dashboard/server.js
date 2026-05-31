@@ -19,7 +19,7 @@ const httpServer = createServer(app);
 const io = new Server(httpServer);
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
-// ── Core config ───────────────────────────────────────────────────────────────
+// ── Core config ────────────────────────────────────────────
 const PORT = process.env.DASHBOARD_PORT || 3001;
 const PASSWORD = process.env.DASHBOARD_PASSWORD || 'changeme';
 const OPENCLAW_URL = process.env.OPENCLAW_URL || 'http://localhost:18789';
@@ -42,12 +42,12 @@ const BACKENDS = {
   ollama:   { container: 'ollama',    url: OLLAMA_URL,   healthPath: '/api/tags', port: 11434 },
 };
 
-// ── Persistent dirs ───────────────────────────────────────────────────────────
+// ── Persistent dirs ────────────────────────────────────────────
 for (const dir of [LOG_DIR, path.dirname(STATE_FILE)]) {
   try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
 }
 
-// ── State (active backend) ────────────────────────────────────────────────────
+// ── State (active backend) ─────────────────────────────────────────
 function readState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
   catch (_) { return { activeBackend: 'openclaw' }; }
@@ -55,20 +55,20 @@ function readState() {
 function writeState(s) { fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2)); }
 function getActiveBackend() { return readState().activeBackend || 'openclaw'; }
 
-// ── Log streams ───────────────────────────────────────────────────────────────
+// ── Log streams ───────────────────────────────────────────────
 function getLogStream(backend) {
   const date = new Date().toISOString().slice(0, 10);
   const file = path.join(LOG_DIR, `${backend}-${date}.log`);
   return fs.createWriteStream(file, { flags: 'a' });
 }
 
-// ── In-memory metrics ─────────────────────────────────────────────────────────
+// ── In-memory metrics ───────────────────────────────────────────────
 const metrics = { tokensToday: 0, errorsTotal: 0, requestsTotal: 0 };
 const backendUp = { openclaw: 0, hermes: 0, ollama: 0 };
 const backendUptime = { openclaw: 0, hermes: 0, ollama: 0 };
 const TOKEN_RE = /tokens?[:\s]+(\d+)/i;
 
-// ── Webhook alerting ──────────────────────────────────────────────────────────
+// ── Webhook alerting ───────────────────────────────────────────────
 const lastState = { openclaw: null, hermes: null, ollama: null };
 
 async function sendAlert(msg) {
@@ -82,7 +82,7 @@ async function sendAlert(msg) {
   } catch (_) {}
 }
 
-// ── Shared backend status helper ──────────────────────────────────────────────
+// ── Shared backend status helper ─────────────────────────────────────────
 async function getBackendStatus(name) {
   const cfg = BACKENDS[name];
   try {
@@ -125,7 +125,7 @@ setInterval(async () => {
   }
 }, 15000);
 
-// ── User store (JWT mode) ─────────────────────────────────────────────────────
+// ── User store (JWT mode) ───────────────────────────────────────────────
 function loadUsers() {
   if (!fs.existsSync(USERS_FILE)) {
     const users = [{ username: 'admin', passwordHash: bcrypt.hashSync(PASSWORD, 10), role: 'admin' }];
@@ -135,11 +135,11 @@ function loadUsers() {
   return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
 }
 
-// ── Rate limiters ─────────────────────────────────────────────────────────────
+// ── Rate limiters ──────────────────────────────────────────────────
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 
-// ── CSRF (double-submit cookie) ───────────────────────────────────────────────
+// ── CSRF (double-submit cookie) ──────────────────────────────────────────────
 function setCsrfCookie(req, res, next) {
   if (!(req.headers['cookie'] || '').includes('csrf-token=')) {
     res.setHeader('Set-Cookie', `csrf-token=${crypto.randomBytes(24).toString('hex')}; SameSite=Strict; Path=/`);
@@ -155,7 +155,7 @@ function verifyCsrf(req, res, next) {
   next();
 }
 
-// ── Auth middleware ───────────────────────────────────────────────────────────
+// ── Auth middleware ──────────────────────────────────────────────────
 function jwtAuth(req, res, next) {
   const auth = req.headers['authorization'] || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
@@ -168,14 +168,14 @@ function auth(req, res, next) {
   return AUTH_MODE === 'jwt' ? jwtAuth(req, res, next) : basicAuthMiddleware(req, res, next);
 }
 
-// ── Middleware ────────────────────────────────────────────────────────────────
+// ── Middleware ──────────────────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(apiLimiter);
 app.use(express.json());
 app.use(setCsrfCookie);
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── Login (JWT mode) ──────────────────────────────────────────────────────────
+// ── Login (JWT mode) ──────────────────────────────────────────────────────
 app.post('/api/login', authLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   const users = loadUsers();
@@ -186,14 +186,14 @@ app.post('/api/login', authLimiter, async (req, res) => {
   res.json({ token });
 });
 
-// ── OpenClaw status (legacy, always openclaw) ─────────────────────────────────
+// ── OpenClaw status (legacy, always openclaw) ─────────────────────────────────────────
 app.get('/api/status', auth, async (req, res) => {
   metrics.requestsTotal++;
   const s = await getBackendStatus('openclaw');
   res.json({ ...s, tokensToday: metrics.tokensToday, errorsTotal: metrics.errorsTotal });
 });
 
-// ── All backends status ───────────────────────────────────────────────────────
+// ── All backends status ───────────────────────────────────────────────────
 app.get('/api/backends', auth, async (req, res) => {
   const results = {};
   for (const name of Object.keys(BACKENDS)) {
@@ -202,14 +202,14 @@ app.get('/api/backends', auth, async (req, res) => {
   res.json({ backends: results, activeBackend: getActiveBackend() });
 });
 
-// ── Per-backend status ────────────────────────────────────────────────────────
+// ── Per-backend status ─────────────────────────────────────────────────────
 app.get('/api/status/:backend', auth, async (req, res) => {
   const { backend } = req.params;
   if (!BACKENDS[backend]) return res.status(400).json({ error: 'Unknown backend' });
   res.json(await getBackendStatus(backend));
 });
 
-// ── Active backend switch ─────────────────────────────────────────────────────
+// ── Active backend switch ────────────────────────────────────────────────────
 app.post('/api/backend/switch', auth, verifyCsrf, (req, res) => {
   const { backend } = req.body || {};
   if (!BACKENDS[backend]) return res.status(400).json({ error: 'Unknown backend: ' + backend });
@@ -218,7 +218,7 @@ app.post('/api/backend/switch', auth, verifyCsrf, (req, res) => {
   res.json({ ok: true, activeBackend: backend });
 });
 
-// ── OpenClaw container controls (legacy) ──────────────────────────────────────
+// ── OpenClaw container controls (legacy) ──────────────────────────────────────────
 app.post('/api/start',   auth, verifyCsrf, async (req, res) => { try { await docker.getContainer('openclaw').start();   res.json({ ok: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.post('/api/stop',    auth, verifyCsrf, async (req, res) => { try { await docker.getContainer('openclaw').stop();    res.json({ ok: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.post('/api/restart', auth, verifyCsrf, async (req, res) => { try { await docker.getContainer('openclaw').restart(); res.json({ ok: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
@@ -243,7 +243,7 @@ app.post('/api/:backend/restart', auth, verifyCsrf, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Hermes: migrate from OpenClaw ─────────────────────────────────────────────
+// ── Hermes: migrate from OpenClaw ───────────────────────────────────────────────
 app.post('/api/hermes/migrate', auth, verifyCsrf, async (req, res) => {
   try {
     const container = docker.getContainer('hermes');
@@ -262,7 +262,7 @@ app.post('/api/hermes/migrate', auth, verifyCsrf, async (req, res) => {
   }
 });
 
-// ── Config routes ─────────────────────────────────────────────────────────────
+// ── Config routes ────────────────────────────────────────────────────────
 app.get('/api/config', auth, (req, res) => {
   try {
     const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
@@ -283,7 +283,7 @@ app.post('/api/config', auth, verifyCsrf, (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Cannot write config: ' + err.message }); }
 });
 
-// ── Ollama: list models ───────────────────────────────────────────────────────
+// ── Ollama: list models ───────────────────────────────────────────────────
 app.get('/api/ollama/models', auth, async (req, res) => {
   try {
     const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(5000) });
@@ -292,7 +292,7 @@ app.get('/api/ollama/models', auth, async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// ── Ollama: pull model (SSE streaming) ────────────────────────────────────────
+// ── Ollama: pull model (SSE streaming) ────────────────────────────────────────────
 app.post('/api/ollama/pull', auth, verifyCsrf, async (req, res) => {
   const { model } = req.body || {};
   if (!model) return res.status(400).json({ error: 'model required' });
@@ -316,7 +316,7 @@ app.post('/api/ollama/pull', auth, verifyCsrf, async (req, res) => {
   } catch (err) { res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`); res.end(); }
 });
 
-// ── Metrics ───────────────────────────────────────────────────────────────────
+// ── Metrics ────────────────────────────────────────────────────────────────────
 app.get('/api/metrics', auth, (req, res) => {
   res.json({ ...metrics, backendUp, backendUptime, activeBackend: getActiveBackend() });
 });
@@ -343,7 +343,7 @@ app.get('/metrics', auth, (req, res) => {
   res.send(lines.join('\n'));
 });
 
-// ── Backup ────────────────────────────────────────────────────────────────────
+// ── Backup ──────────────────────────────────────────────────────────────────────
 app.post('/api/backup', auth, verifyCsrf, (req, res) => {
   const date = new Date().toISOString().slice(0, 10);
   const VALID_BACKENDS = ['openclaw', 'hermes', 'ollama'];
@@ -359,7 +359,7 @@ app.post('/api/backup', auth, verifyCsrf, (req, res) => {
   child.on('error', (err) => res.status(500).end(err.message));
 });
 
-// ── Socket.io auth middleware ─────────────────────────────────────────────────
+// ── Socket.io auth middleware ───────────────────────────────────────────────────
 io.use((socket, next) => {
   if (AUTH_MODE === 'jwt') {
     const token = socket.handshake.auth?.token;
@@ -379,7 +379,7 @@ io.use((socket, next) => {
   }
 });
 
-// ── Socket.io: live log streaming (backend-aware) ─────────────────────────────
+// ── Socket.io: live log streaming (backend-aware) ───────────────────────────────────
 io.on('connection', (socket) => {
   let logStream = null;
   let fileStream = null;
@@ -427,7 +427,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// ── Setup wizard check ────────────────────────────────────────────────────────
+// ── Setup wizard check ──────────────────────────────────────────────────────
 app.get('/setup', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
@@ -437,7 +437,7 @@ app.get('/api/setup/status', (req, res) => {
   res.json({ complete: !!s.setup_complete, activeBackend: s.activeBackend || 'openclaw' });
 });
 
-app.post('/api/setup/complete', (req, res) => {
+app.post('/api/setup/complete', authLimiter, (req, res) => {
   const s = readState();
   if (s.setup_complete) return res.status(403).json({ error: 'Setup already complete' });
   const { password, backend } = req.body || {};
@@ -455,7 +455,7 @@ app.post('/api/setup/complete', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Local AI scanner ──────────────────────────────────────────────────────────
+// ── Local AI scanner ───────────────────────────────────────────────────────
 app.get('/api/scan/local-ai', auth, async (req, res) => {
   const CANDIDATES = [
     { name: 'Ollama',     url: 'http://localhost:11434', check: '/api/tags',   type: 'ollama'    },
@@ -490,7 +490,7 @@ app.get('/api/scan/local-ai', auth, async (req, res) => {
   res.json({ services: deduped });
 });
 
-// ── Conversation history ──────────────────────────────────────────────────────
+// ── Conversation history ──────────────────────────────────────────────────
 app.get('/api/history', auth, (req, res) => {
   const { backend, limit = '50', offset = '0' } = req.query;
   res.json(db.getConversations({ backend, limit: parseInt(limit), offset: parseInt(offset) }));
@@ -508,7 +508,7 @@ app.delete('/api/history/:id', auth, verifyCsrf, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── User management ───────────────────────────────────────────────────────────
+// ── User management ─────────────────────────────────────────────────────────
 app.get('/api/users', auth, (req, res) => {
   const users = loadUsers().map(u => ({ username: u.username, role: u.role }));
   res.json(users);
@@ -548,7 +548,7 @@ app.delete('/api/users/:username', auth, verifyCsrf, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── MCP server management ─────────────────────────────────────────────────────
+// ── MCP server management ───────────────────────────────────────────────────
 app.get('/api/mcp/servers', auth, (req, res) => {
   res.json(db.getMcpServers().map(s => ({ ...s, auth_token: s.auth_token ? '***' : null })));
 });
@@ -556,6 +556,14 @@ app.get('/api/mcp/servers', auth, (req, res) => {
 app.post('/api/mcp/servers', auth, verifyCsrf, (req, res) => {
   const { name, url, auth_token } = req.body || {};
   if (!name || !url) return res.status(400).json({ error: 'name and url required' });
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return res.status(400).json({ error: 'URL must use http or https' });
+    // Block RFC-1918, loopback, link-local to prevent SSRF
+    const h = parsed.hostname;
+    if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|localhost$)/.test(h))
+      return res.status(400).json({ error: 'Private/local URLs not allowed' });
+  } catch { return res.status(400).json({ error: 'Invalid URL' }); }
   db.addMcpServer(name, url, auth_token);
   db.addAudit(req.user?.username || 'admin', 'add_mcp_server', name, 'ok', req.ip);
   res.json({ ok: true });
@@ -576,7 +584,7 @@ app.patch('/api/mcp/servers/:id/toggle', auth, verifyCsrf, (req, res) => {
   res.json({ ok: true, enabled });
 });
 
-app.post('/api/mcp/servers/:id/test', auth, async (req, res) => {
+app.post('/api/mcp/servers/:id/test', auth, verifyCsrf, async (req, res) => {
   const servers = db.getMcpServers();
   const server = servers.find(s => s.id === parseInt(req.params.id));
   if (!server) return res.status(404).json({ error: 'Not found' });
@@ -590,7 +598,7 @@ app.post('/api/mcp/servers/:id/test', auth, async (req, res) => {
   }
 });
 
-// ── ClawHub skill browser ─────────────────────────────────────────────────────
+// ── ClawHub skill browser ────────────────────────────────────────────────────────
 const CURATED_SKILLS = [
   { name: 'web-search',      description: 'Search the web and summarize results in chat',              category: 'Information',  installs: 22100, version: '3.0.1' },
   { name: 'reminder',        description: 'Set reminders — "remind me in 30 min to call John"',        category: 'Productivity', installs: 18400, version: '2.1.0' },
@@ -662,7 +670,7 @@ app.post('/api/skills/install', auth, verifyCsrf, async (req, res) => {
   }
 });
 
-// ── Routing rules ─────────────────────────────────────────────────────────────
+// ── Routing rules ──────────────────────────────────────────────────────────────
 app.get('/api/routing', auth, (req, res) => { res.json(db.getRoutingRules()); });
 
 app.post('/api/routing', auth, verifyCsrf, (req, res) => {
@@ -685,7 +693,7 @@ app.patch('/api/routing/:id/toggle', auth, verifyCsrf, (req, res) => {
   res.json({ ok: true, enabled });
 });
 
-// ── Presets ───────────────────────────────────────────────────────────────────
+// ── Presets ──────────────────────────────────────────────────────────────────────
 app.get('/api/presets', auth, (req, res) => { res.json(db.getPresets()); });
 
 app.post('/api/presets', auth, verifyCsrf, (req, res) => {
@@ -700,24 +708,24 @@ app.delete('/api/presets/:id', auth, verifyCsrf, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Audit log ─────────────────────────────────────────────────────────────────
+// ── Audit log ──────────────────────────────────────────────────────────────────
 app.get('/api/audit', auth, (req, res) => {
   const { limit = '100', offset = '0' } = req.query;
   res.json(db.getAuditLog({ limit: parseInt(limit), offset: parseInt(offset) }));
 });
 
-// ── Notifications ─────────────────────────────────────────────────────────────
+// ── Notifications ───────────────────────────────────────────────────────────────
 app.get('/api/notifications', auth, (req, res) => {
   res.json({ notifications: db.getNotifications(), unread: db.getUnreadCount() });
 });
 
-app.post('/api/notifications/:id/read', auth, (req, res) => {
+app.post('/api/notifications/:id/read', auth, verifyCsrf, (req, res) => {
   if (req.params.id === 'all') db.markAllRead();
   else db.markRead(parseInt(req.params.id));
   res.json({ ok: true });
 });
 
-// ── 7-day metrics ─────────────────────────────────────────────────────────────
+// ── 7-day metrics ────────────────────────────────────────────────────────────────
 app.get('/api/metrics/history', auth, (req, res) => {
   res.json(db.getMetrics7Days());
 });
@@ -731,13 +739,13 @@ app.get('/api/metrics/by-model', auth, (req, res) => {
   res.json(rows);
 });
 
-// ── Restore backup ────────────────────────────────────────────────────────────
+// ── Restore backup ───────────────────────────────────────────────────────────────
 app.post('/api/restore', auth, verifyCsrf, (req, res) => {
   // Streams are complex; inform client of the manual approach for now
   res.json({ ok: false, error: 'Restore via: docker run --rm -v <volume>:/data alpine tar xzf - < backup.tar.gz' });
 });
 
-// ── Version / update check ────────────────────────────────────────────────────
+// ── Version / update check ─────────────────────────────────────────────────────────
 const pkg = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'package.json'), 'utf8'));
 let _latestCache = null;
 let _latestFetchedAt = 0;
