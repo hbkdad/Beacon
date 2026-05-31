@@ -15,9 +15,76 @@
       --mono:'Fira Mono',monospace;--shadow:0 8px 32px rgba(0,0,0,.6);
       --sidebar-w:200px;--sidebar-cw:52px;--topbar-h:52px;--radius:8px
     }
+    [data-theme="light"]{
+      --bg:#f4f4f5;--surface:#ffffff;--surface-raised:#f9f9fb;--border:#e4e4e7;
+      --accent:#059669;--accent-dim:rgba(5,150,105,0.08);
+      --green:#16a34a;--green-dim:rgba(22,163,74,0.08);--yellow:#ca8a04;--blue:#2563eb;
+      --blue-dim:rgba(37,99,235,0.08);--red:#dc2626;--text:#18181b;--muted:#71717a;
+      --shadow:0 4px 20px rgba(0,0,0,.08)
+    }
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
   </style>
 </head>
 <body>
-<p>Beacon Dashboard v1.4.0</p>
+<div id="login-screen">
+  <div class="login-card">
+    <h2>Sign in to your dashboard</h2>
+    <div class="field"><label>Username</label><input id="l-user" type="text" value="admin"></div>
+    <div class="field"><label>Password</label><input id="l-pass" type="password"></div>
+    <div id="login-error"></div>
+    <button onclick="login()">Sign in</button>
+  </div>
+</div>
+<div id="app" style="display:none">
+  <p>Beacon Dashboard v1.4.0 — Cost Breakdown Panel</p>
+  <div id="cost-breakdown-wrap" style="display:none">
+    <div>Cost Estimation by Model</div>
+    <div id="cost-breakdown-table"></div>
+  </div>
+</div>
+<script>
+let authToken = localStorage.getItem('sc-token') || null;
+const MODEL_PRICES = {
+  'claude-opus-4-8':           { in: 15,    out: 75    },
+  'claude-sonnet-4-6':         { in: 3,     out: 15    },
+  'claude-haiku-4-5-20251001': { in: 0.8,   out: 4     },
+  'gpt-4o':                    { in: 2.5,   out: 10    },
+  'gpt-4o-mini':               { in: 0.15,  out: 0.6   },
+  'gemini-2.0-flash':          { in: 0.1,   out: 0.4   },
+};
+function estimateCost(model, tokens) {
+  const p = MODEL_PRICES[model];
+  if (!p) return null;
+  const cost = (tokens / 1_000_000) * ((p.in + p.out) / 2);
+  return cost < 0.01 ? '<$0.01' : '$' + cost.toFixed(2);
+}
+async function loadCostBreakdown() {
+  try {
+    const r = await fetch('/api/metrics/by-model', { headers: authToken ? { Authorization: 'Bearer ' + authToken } : {} });
+    if (!r || !r.ok) return;
+    const rows = await r.json();
+    const wrap = document.getElementById('cost-breakdown-wrap');
+    const tbl = document.getElementById('cost-breakdown-table');
+    if (!rows.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    tbl.innerHTML = rows.map(row => `<div>${row.model}: ${estimateCost(row.model, row.tokens) || '-'}</div>`).join('');
+  } catch(_) {}
+}
+async function login() {
+  const user = document.getElementById('l-user').value;
+  const pass = document.getElementById('l-pass').value;
+  const err = document.getElementById('login-error');
+  try {
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) });
+    if (!r.ok) { err.textContent = 'Invalid credentials.'; return; }
+    const data = await r.json();
+    authToken = data.token;
+    localStorage.setItem('sc-token', authToken);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    loadCostBreakdown();
+  } catch(e) { err.textContent = 'Network error.'; }
+}
+</script>
 </body>
 </html>
