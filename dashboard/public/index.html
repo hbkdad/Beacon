@@ -9,7 +9,7 @@
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
       --bg:#111114;--surface:#1a1a1f;--surface-raised:#222228;--border:#2a2a35;
-      --accent:#10b981;--accent-dim:rgba(16,185,129,0.1);--accent-hover:rgba(16,185,129,0.18);
+      --accent:#10b981;--accent-dim:rgba(16,185,129,0.1);
       --green:#22c55e;--green-dim:rgba(34,197,94,0.1);--yellow:#eab308;--blue:#60a5fa;
       --blue-dim:rgba(96,165,250,0.1);--red:#f87171;--text:#e2e8f0;--muted:#52525b;
       --mono:'Fira Mono',monospace;--shadow:0 8px 32px rgba(0,0,0,.6);
@@ -17,7 +17,7 @@
     }
     [data-theme="light"]{
       --bg:#f4f4f5;--surface:#ffffff;--surface-raised:#f9f9fb;--border:#e4e4e7;
-      --accent:#059669;--accent-dim:rgba(5,150,105,0.08);--accent-hover:rgba(5,150,105,0.14);
+      --accent:#059669;--accent-dim:rgba(5,150,105,0.08);
       --green:#16a34a;--green-dim:rgba(22,163,74,0.08);--yellow:#ca8a04;--blue:#2563eb;
       --blue-dim:rgba(37,99,235,0.08);--red:#dc2626;--text:#18181b;--muted:#71717a;
       --shadow:0 4px 20px rgba(0,0,0,.08)
@@ -348,7 +348,7 @@
     /* ── Responsive ── */
     @media(max-width:768px){
       .sidebar{transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1)}
-      .sidebar.mobile-open{transform:translateX(0);width:var(--sidebar-w) !important}
+      .sidebar.mobile-open{transform:translateX(0) !important;width:var(--sidebar-w) !important}
       .sidebar[data-collapsed=true]{transform:translateX(-100%)}
       .main-area,.sidebar[data-collapsed=true]~.main-area{margin-left:0}
       .main-area{transition:none}
@@ -377,7 +377,7 @@
 <body>
 
 <!-- Login -->
-<div id="login-screen" style="display:none">
+<div id="login-screen">
   <div class="login-card">
     <div class="login-logo">
       <svg width="22" height="22" viewBox="0 0 20 20" fill="none" style="color:var(--accent);flex-shrink:0"><line x1="10" y1="18" x2="10" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="7" y1="18" x2="13" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="11" r="1.5" fill="currentColor"/><path d="M7.5 10.5Q10 7.5 12.5 10.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><path d="M5 9Q10 3 15 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".5"/></svg>
@@ -861,21 +861,29 @@ function logout() {
     }
   } catch (_) {}
   const r = await fetch('/api/status');
-  if (r.status === 401 && !authToken) {
+  if (r.status === 401) {
+    authToken = null; localStorage.removeItem('sc-token');
     document.getElementById('login-screen').style.display = 'flex';
-  } else {
+  } else if (r.ok) {
     showApp();
+  } else {
+    document.getElementById('login-screen').style.display = 'flex';
   }
 })();
 
+let appInitialized = false;
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  // Restore sidebar collapsed state
+  // Restore sidebar collapsed state (only set attribute if explicitly collapsed)
   const savedCollapsed = localStorage.getItem('sidebar-collapsed');
-  if (savedCollapsed) {
-    document.getElementById('sidebar').setAttribute('data-collapsed', savedCollapsed);
+  if (savedCollapsed === 'true') {
+    document.getElementById('sidebar').setAttribute('data-collapsed', 'true');
+  } else {
+    document.getElementById('sidebar').removeAttribute('data-collapsed');
   }
+  if (appInitialized) return;
+  appInitialized = true;
   applyTheme();
   initSocket();
   loadBackends();
@@ -1540,7 +1548,7 @@ function openGateway() {
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function escHtml(str) {
   if (!str) return '';
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 let toastTimer;

@@ -437,6 +437,7 @@ app.get('/api/setup/status', (req, res) => {
 
 app.post('/api/setup/complete', (req, res) => {
   const s = readState();
+  if (s.setup_complete) return res.status(403).json({ error: 'Setup already complete' });
   const { password, provider, apiKey, backend, channel } = req.body || {};
   if (password) {
     // Update admin password in users.json
