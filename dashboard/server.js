@@ -1,4 +1,5 @@
 const express = require('express');
+const helmet = require('helmet');
 const basicAuth = require('express-basic-auth');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
@@ -11,434 +12,131 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const db = require('./db');
-const { parseLogLine } = require('./logParser');
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer);
-const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
-// ── Core config ───────────────────────────────────────────────────────────────
+app.use(helmet());
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(express.static(path.join(__dirname, 'public')));
+
 const PORT = process.env.DASHBOARD_PORT || 3001;
-const PASSWORD = process.env.DASHBOARD_PASSWORD || 'changeme';
 const OPENCLAW_URL = process.env.OPENCLAW_URL || 'http://localhost:18789';
-const HERMES_URL = process.env.HERMES_URL || 'http://localhost:8080';
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const HERMES_URL   = process.env.HERMES_URL   || 'http://localhost:8080';
+const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434';
+const STATE_FILE   = process.env.STATE_FILE   || '/data/state.json';
+const LOG_DIR      = process.env.LOG_DIR      || '/data/logs';
+const USERS_FILE   = process.env.USERS_FILE   || '/data/users.json';
+const AUTH_MODE    = process.env.AUTH_MODE    || 'basic';
+const JWT_SECRET   = process.env.JWT_SECRET   || crypto.randomBytes(32).toString('hex');
 const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL || '';
-const AUTH_MODE = process.env.AUTH_MODE || 'basic';
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
-if (AUTH_MODE === 'jwt' && !process.env.JWT_SECRET) {
-  console.warn('[warn] AUTH_MODE=jwt but JWT_SECRET not set — all tokens invalidated on restart, set JWT_SECRET in .env');
-}
-const CONFIG_PATH = process.env.OPENCLAW_CONFIG_PATH || '/config/openclaw.json';
-const HERMES_CONFIG_PATH = process.env.HERMES_CONFIG_PATH || '/config/hermes.yaml';
-const LOG_DIR = process.env.LOG_DIR || '/data/logs';
-const STATE_FILE = process.env.STATE_FILE || '/data/state.json';
-const USERS_FILE = path.join(__dirname, 'users.json');
+const OPENCLAW_CONFIG_PATH = process.env.OPENCLAW_CONFIG_PATH || '/config/openclaw.json';
 
 const BACKENDS = {
-  openclaw: { container: 'openclaw',  url: OPENCLAW_URL, healthPath: '/health',   port: 18789 },
-  hermes:   { container: 'hermes',    url: HERMES_URL,   healthPath: '/health',   port: 8080  },
-  ollama:   { container: 'ollama',    url: OLLAMA_URL,   healthPath: '/api/tags', port: 11434 },
+  openclaw: { url: OPENCLAW_URL, healthPath: '/health' },
+  hermes:   { url: HERMES_URL,   healthPath: '/health' },
+  ollama:   { url: OLLAMA_URL,   healthPath: '/api/tags' },
 };
 
-// ── Persistent dirs ───────────────────────────────────────────────────────────
-for (const dir of [LOG_DIR, path.dirname(STATE_FILE)]) {
-  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
-}
+const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
-// ── State (active backend) ────────────────────────────────────────────────────
-function readState() {
-  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
-  catch (_) { return { activeBackend: 'openclaw' }; }
-}
-function writeState(s) { fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2)); }
-function getActiveBackend() { return readState().activeBackend || 'openclaw'; }
+// ── Rate limiters ──────────────────────────────────────────────────────────
+const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+app.use('/api/', apiLimiter);
 
-// ── Log streams ───────────────────────────────────────────────────────────────
-function getLogStream(backend) {
-  const date = new Date().toISOString().slice(0, 10);
-  const file = path.join(LOG_DIR, `${backend}-${date}.log`);
-  return fs.createWriteStream(file, { flags: 'a' });
-}
-
-// ── In-memory metrics ─────────────────────────────────────────────────────────
-const metrics = { tokensToday: 0, errorsTotal: 0, requestsTotal: 0 };
-const backendUp = { openclaw: 0, hermes: 0, ollama: 0 };
-const backendUptime = { openclaw: 0, hermes: 0, ollama: 0 };
-const TOKEN_RE = /tokens?[:\s]+(\d+)/i;
-
-// ── Webhook alerting ──────────────────────────────────────────────────────────
-const lastState = { openclaw: null, hermes: null, ollama: null };
-
-async function sendAlert(msg) {
-  if (!ALERT_WEBHOOK_URL) return;
-  try {
-    const fetch = (await import('node-fetch')).default;
-    await fetch(ALERT_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: msg, text: msg }),
-    });
-  } catch (_) {}
-}
-
-// ── Shared backend status helper ──────────────────────────────────────────────
-async function getBackendStatus(name) {
-  const cfg = BACKENDS[name];
-  try {
-    const container = docker.getContainer(cfg.container);
-    const info = await container.inspect();
-    const state = info.State;
-    let healthy = false;
-    if (state.Running) {
-      try {
-        const fetch = (await import('node-fetch')).default;
-        const r = await fetch(`${cfg.url}${cfg.healthPath}`, { timeout: 3000 });
-        healthy = r.ok;
-      } catch (_) {}
-    }
-    const uptime = state.Running ? Math.floor((Date.now() - new Date(state.StartedAt)) / 1000) : 0;
-    return { running: state.Running, status: state.Status, startedAt: state.StartedAt, healthy, uptime };
-  } catch (_) {
-    return { running: false, status: 'not_found', healthy: false, uptime: 0 };
-  }
-}
-
-// Poll all backends every 15s for metrics + alerts
-setInterval(async () => {
-  for (const [name, _] of Object.entries(BACKENDS)) {
-    const s = await getBackendStatus(name);
-    backendUp[name] = s.running ? 1 : 0;
-    backendUptime[name] = s.uptime;
-    const nowUp = s.running && s.healthy;
-    if (lastState[name] !== null && lastState[name] !== nowUp) {
-      if (nowUp) {
-        sendAlert(`🟢 Beacon: ${name} is back online!`);
-        db.addNotification('info', `${name} is back online`, `${name} container running`);
-      } else {
-        sendAlert(`🔴 Beacon: ${name} went offline!`);
-        db.addNotification('alert', `${name} went offline`, `${name} container stopped`);
-      }
-    }
-    lastState[name] = nowUp;
-    const today = new Date().toISOString().slice(0, 10);
-    db.upsertDailyMetrics(today, name, { requests: 0 });
-  }
-}, 15000);
-
-// ── User store (JWT mode) ─────────────────────────────────────────────────────
-function loadUsers() {
-  if (!fs.existsSync(USERS_FILE)) {
-    const users = [{ username: 'admin', passwordHash: bcrypt.hashSync(PASSWORD, 10), role: 'admin' }];
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-    return users;
-  }
-  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-}
-
-// ── Rate limiters ─────────────────────────────────────────────────────────────
-const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
-
-// ── CSRF (double-submit cookie) ───────────────────────────────────────────────
-function setCsrfCookie(req, res, next) {
-  if (!(req.headers['cookie'] || '').includes('csrf-token=')) {
-    res.setHeader('Set-Cookie', `csrf-token=${crypto.randomBytes(24).toString('hex')}; SameSite=Strict; Path=/`);
-  }
-  next();
+// ── CSRF ──────────────────────────────────────────────────────────────────
+function generateCsrf() {
+  return crypto.randomBytes(24).toString('hex');
 }
 function verifyCsrf(req, res, next) {
-  const match = (req.headers['cookie'] || '').match(/csrf-token=([a-f0-9]+)/);
-  const cookieToken = match ? match[1] : null;
-  if (!cookieToken || cookieToken !== req.headers['x-csrf-token']) {
+  const header = req.headers['x-csrf-token'];
+  const cookie = (req.headers.cookie || '')
+    .split(';')
+    .map(c => c.trim())
+    .find(c => c.startsWith('csrf_token='));
+  const cookieVal = cookie ? cookie.split('=')[1] : null;
+  if (!header || !cookieVal || header !== cookieVal) {
     return res.status(403).json({ error: 'Invalid CSRF token' });
   }
   next();
 }
 
-// ── Auth middleware ───────────────────────────────────────────────────────────
-function jwtAuth(req, res, next) {
-  const auth = req.headers['authorization'] || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Unauthorized' });
-  try { req.user = jwt.verify(token, JWT_SECRET); next(); }
-  catch (_) { res.status(401).json({ error: 'Invalid token' }); }
+// ── State helpers ──────────────────────────────────────────────────────────
+function readState() {
+  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
+  catch { return { activeBackend: 'openclaw', setup_complete: false }; }
 }
-const basicAuthMiddleware = basicAuth({ users: { admin: PASSWORD }, challenge: true, realm: 'Beacon Dashboard' });
-function auth(req, res, next) {
-  return AUTH_MODE === 'jwt' ? jwtAuth(req, res, next) : basicAuthMiddleware(req, res, next);
+function writeState(s) {
+  try {
+    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
+  } catch {}
 }
 
-// ── Middleware ────────────────────────────────────────────────────────────────
-app.use(apiLimiter);
-app.use(express.json());
-app.use(setCsrfCookie);
-app.use(express.static(path.join(__dirname, 'public')));
+// ── Users helpers ──────────────────────────────────────────────────────────
+function loadUsers() {
+  try { return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); }
+  catch { return [{ username: 'admin', passwordHash: bcrypt.hashSync(process.env.DASHBOARD_PASSWORD || 'changeme', 10), role: 'admin' }]; }
+}
+function saveUsers(users) {
+  fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
 
-// ── Login (JWT mode) ──────────────────────────────────────────────────────────
-app.post('/api/login', authLimiter, async (req, res) => {
-  const { username, password } = req.body || {};
+// ── Auth middleware ────────────────────────────────────────────────────────
+function basicAuthMiddleware(req, res, next) {
+  const header = req.headers['authorization'] || '';
+  if (!header.startsWith('Basic ')) return res.status(401).set('WWW-Authenticate', 'Basic').json({ error: 'Unauthorized' });
+  const [user, pass] = Buffer.from(header.slice(6), 'base64').toString().split(':');
   const users = loadUsers();
-  const user = users.find(u => u.username === username);
-  if (!user || !bcrypt.compareSync(password, user.passwordHash))
-    return res.status(401).json({ error: 'Invalid credentials' });
-  const token = jwt.sign({ username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+  const found = users.find(u => u.username === user && bcrypt.compareSync(pass, u.passwordHash));
+  if (!found) return res.status(401).set('WWW-Authenticate', 'Basic').json({ error: 'Unauthorized' });
+  req.user = found;
+  next();
+}
+function jwtAuthMiddleware(req, res, next) {
+  const header = req.headers['authorization'] || '';
+  if (!header.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    req.user = jwt.verify(header.slice(7), JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+}
+const auth = AUTH_MODE === 'jwt' ? jwtAuthMiddleware : basicAuthMiddleware;
+
+// ── CSRF token endpoint (no auth required) ────────────────────────────────
+app.get('/api/csrf-token', (req, res) => {
+  const token = generateCsrf();
+  res.cookie('csrf_token', token, { httpOnly: false, sameSite: 'strict' });
   res.json({ token });
 });
 
-// ── OpenClaw status (legacy, always openclaw) ─────────────────────────────────
-app.get('/api/status', auth, async (req, res) => {
-  metrics.requestsTotal++;
-  const s = await getBackendStatus('openclaw');
-  res.json({ ...s, tokensToday: metrics.tokensToday, errorsTotal: metrics.errorsTotal });
+// ── JWT login ─────────────────────────────────────────────────────────────
+app.post('/api/login', authLimiter, (req, res) => {
+  const { username, password } = req.body || {};
+  const users = loadUsers();
+  const user = users.find(u => u.username === username && bcrypt.compareSync(password, u.passwordHash));
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+  const token = jwt.sign({ username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+  db.addAudit(user.username, 'login', 'auth', 'ok', req.ip);
+  res.json({ token });
 });
 
-// ── All backends status ───────────────────────────────────────────────────────
-app.get('/api/backends', auth, async (req, res) => {
-  const results = {};
-  for (const name of Object.keys(BACKENDS)) {
-    results[name] = await getBackendStatus(name);
-  }
-  res.json({ backends: results, activeBackend: getActiveBackend() });
-});
-
-// ── Per-backend status ────────────────────────────────────────────────────────
-app.get('/api/status/:backend', auth, async (req, res) => {
-  const { backend } = req.params;
-  if (!BACKENDS[backend]) return res.status(400).json({ error: 'Unknown backend' });
-  res.json(await getBackendStatus(backend));
-});
-
-// ── Active backend switch ─────────────────────────────────────────────────────
-app.post('/api/backend/switch', auth, verifyCsrf, (req, res) => {
-  const { backend } = req.body || {};
-  if (!BACKENDS[backend]) return res.status(400).json({ error: 'Unknown backend: ' + backend });
-  writeState({ activeBackend: backend });
-  io.emit('backend-changed', { activeBackend: backend });
-  res.json({ ok: true, activeBackend: backend });
-});
-
-// ── OpenClaw container controls (legacy) ──────────────────────────────────────
-app.post('/api/start',   auth, verifyCsrf, async (req, res) => { try { await docker.getContainer('openclaw').start();   res.json({ ok: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.post('/api/stop',    auth, verifyCsrf, async (req, res) => { try { await docker.getContainer('openclaw').stop();    res.json({ ok: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.post('/api/restart', auth, verifyCsrf, async (req, res) => { try { await docker.getContainer('openclaw').restart(); res.json({ ok: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
-
-// ── Generic per-backend controls ──────────────────────────────────────────────
-app.post('/api/:backend/start',   auth, verifyCsrf, async (req, res) => {
-  const cfg = BACKENDS[req.params.backend];
-  if (!cfg) return res.status(400).json({ error: 'Unknown backend' });
-  try { await docker.getContainer(cfg.container).start();   res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.post('/api/:backend/stop',    auth, verifyCsrf, async (req, res) => {
-  const cfg = BACKENDS[req.params.backend];
-  if (!cfg) return res.status(400).json({ error: 'Unknown backend' });
-  try { await docker.getContainer(cfg.container).stop();    res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.post('/api/:backend/restart', auth, verifyCsrf, async (req, res) => {
-  const cfg = BACKENDS[req.params.backend];
-  if (!cfg) return res.status(400).json({ error: 'Unknown backend' });
-  try { await docker.getContainer(cfg.container).restart(); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Hermes: migrate from OpenClaw ─────────────────────────────────────────────
-app.post('/api/hermes/migrate', auth, verifyCsrf, async (req, res) => {
-  try {
-    const container = docker.getContainer('hermes');
-    const exec = await container.exec({
-      Cmd: ['hermes', 'claw', 'migrate'],
-      AttachStdout: true,
-      AttachStderr: true,
-    });
-    const stream = await exec.start({ hijack: true, stdin: false });
-    let output = '';
-    stream.on('data', (chunk) => { output += chunk.slice(8).toString('utf8'); });
-    stream.on('end', () => res.json({ ok: true, output }));
-    stream.on('error', (e) => res.status(500).json({ error: e.message }));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Config routes ─────────────────────────────────────────────────────────────
-app.get('/api/config', auth, (req, res) => {
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-    res.json(JSON.parse(raw));
-  } catch (err) { res.status(500).json({ error: 'Cannot read config: ' + err.message }); }
-});
-
-app.post('/api/config', auth, verifyCsrf, (req, res) => {
-  try {
-    const current = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    const { provider, model } = req.body;
-    if (provider && model) {
-      if (!current.providers[provider]) current.providers[provider] = {};
-      current.providers[provider].model = model;
-    }
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(current, null, 2));
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Cannot write config: ' + err.message }); }
-});
-
-// ── Ollama: list models ───────────────────────────────────────────────────────
-app.get('/api/ollama/models', auth, async (req, res) => {
-  try {
-    const fetch = (await import('node-fetch')).default;
-    const r = await fetch(`${OLLAMA_URL}/api/tags`, { timeout: 5000 });
-    if (!r.ok) return res.status(502).json({ error: 'Ollama unreachable' });
-    res.json(await r.json());
-  } catch (err) { res.status(502).json({ error: err.message }); }
-});
-
-// ── Ollama: pull model (SSE streaming) ────────────────────────────────────────
-app.post('/api/ollama/pull', auth, verifyCsrf, async (req, res) => {
-  const { model } = req.body || {};
-  if (!model) return res.status(400).json({ error: 'model required' });
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  try {
-    const fetch = (await import('node-fetch')).default;
-    const r = await fetch(`${OLLAMA_URL}/api/pull`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: model, stream: true }),
-    });
-    r.body.on('data', (chunk) => res.write(`data: ${chunk.toString('utf8')}\n\n`));
-    r.body.on('end', () => { res.write('data: {"status":"done"}\n\n'); res.end(); });
-    r.body.on('error', (e) => { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); res.end(); });
-  } catch (err) { res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`); res.end(); }
-});
-
-// ── Metrics ───────────────────────────────────────────────────────────────────
-app.get('/api/metrics', auth, (req, res) => {
-  res.json({ ...metrics, backendUp, backendUptime, activeBackend: getActiveBackend() });
-});
-
-app.get('/metrics', auth, (req, res) => {
-  res.setHeader('Content-Type', 'text/plain; version=0.0.4');
-  const lines = [
-    '# HELP beacon_container_up Whether the backend container is running',
-    '# TYPE beacon_container_up gauge',
-    ...Object.entries(backendUp).map(([b, v]) => `beacon_container_up{backend="${b}"} ${v}`),
-    '# HELP beacon_uptime_seconds Container uptime in seconds',
-    '# TYPE beacon_uptime_seconds gauge',
-    ...Object.entries(backendUptime).map(([b, v]) => `beacon_uptime_seconds{backend="${b}"} ${v}`),
-    '# HELP beacon_tokens_today Tokens used today',
-    '# TYPE beacon_tokens_today counter',
-    `beacon_tokens_today ${metrics.tokensToday}`,
-    '# HELP beacon_errors_total Log error lines counted',
-    '# TYPE beacon_errors_total counter',
-    `beacon_errors_total ${metrics.errorsTotal}`,
-    '# HELP beacon_requests_total Dashboard API requests',
-    '# TYPE beacon_requests_total counter',
-    `beacon_requests_total ${metrics.requestsTotal}`,
-  ];
-  res.send(lines.join('\n'));
-});
-
-// ── Backup ────────────────────────────────────────────────────────────────────
-app.post('/api/backup', auth, verifyCsrf, (req, res) => {
-  const date = new Date().toISOString().slice(0, 10);
-  const VALID_BACKENDS = ['openclaw', 'hermes', 'ollama'];
-  const backend = VALID_BACKENDS.includes(req.query.backend) ? req.query.backend : 'openclaw';
-  const VOLUME_MAP = { openclaw: 'selfclawy_openclaw_data', hermes: 'selfclawy_hermes_data', ollama: 'selfclawy_ollama_data' };
-  const volume = VOLUME_MAP[backend];
-  const filename = `${backend}-backup-${date}.tar.gz`;
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.setHeader('Content-Type', 'application/gzip');
-  const child = exec(`docker run --rm -v ${volume}:/data alpine tar czf - -C /data .`, { encoding: 'buffer' });
-  child.stdout.pipe(res);
-  child.stderr.on('data', () => {});
-  child.on('error', (err) => res.status(500).end(err.message));
-});
-
-// ── Socket.io auth middleware ─────────────────────────────────────────────────
-io.use((socket, next) => {
-  if (AUTH_MODE === 'jwt') {
-    const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error('Unauthorized'));
-    try { jwt.verify(token, JWT_SECRET); next(); } catch { next(new Error('Unauthorized')); }
-  } else {
-    const authHeader = socket.handshake.headers?.authorization || '';
-    const b64 = authHeader.startsWith('Basic ') ? authHeader.slice(6) : '';
-    if (!b64) return next(new Error('Unauthorized'));
-    try {
-      const decoded = Buffer.from(b64, 'base64').toString();
-      const colonIdx = decoded.indexOf(':');
-      const pass = colonIdx >= 0 ? decoded.slice(colonIdx + 1) : '';
-      if (pass === PASSWORD) next();
-      else next(new Error('Unauthorized'));
-    } catch { next(new Error('Unauthorized')); }
-  }
-});
-
-// ── Socket.io: live log streaming (backend-aware) ─────────────────────────────
-io.on('connection', (socket) => {
-  let logStream = null;
-  let fileStream = null;
-  let lineBuffer = '';
-
-  async function subscribeToBackend(backend) {
-    if (logStream) { try { logStream.destroy(); } catch (_) {} }
-    if (fileStream) { try { fileStream.end(); } catch (_) {} }
-    lineBuffer = '';
-    const cfg = BACKENDS[backend] || BACKENDS.openclaw;
-    try {
-      fileStream = getLogStream(backend);
-      const container = docker.getContainer(cfg.container);
-      logStream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 100 });
-      logStream.on('data', (chunk) => {
-        const raw = chunk.slice(8).toString('utf8');
-        socket.emit('log', raw);
-        fileStream.write(raw);
-        if (/error|fatal/i.test(raw)) metrics.errorsTotal++;
-        const tm = raw.match(TOKEN_RE);
-        if (tm) {
-          const n = parseInt(tm[1], 10);
-          metrics.tokensToday += n;
-          db.upsertDailyMetrics(new Date().toISOString().slice(0, 10), backend, { tokens: n });
-        }
-        lineBuffer += raw;
-        if (lineBuffer.length > 200_000) lineBuffer = lineBuffer.slice(-100_000);
-        const lines = lineBuffer.split('\n');
-        lineBuffer = lines.pop();
-        for (const line of lines) parseLogLine(line.trim(), backend, db.insertConversation);
-      });
-      logStream.on('end', () => {
-        if (lineBuffer.trim()) { parseLogLine(lineBuffer.trim(), backend, db.insertConversation); lineBuffer = ''; }
-        socket.emit('log', '[stream ended]');
-        if (fileStream) fileStream.end();
-      });
-    } catch (err) { socket.emit('log', `[error: ${err.message}]`); }
-  }
-
-  socket.on('subscribe-logs', () => subscribeToBackend(getActiveBackend()));
-  socket.on('subscribe-logs-backend', (backend) => subscribeToBackend(backend));
-  socket.on('disconnect', () => {
-    if (logStream) try { logStream.destroy(); } catch (_) {}
-    if (fileStream) try { fileStream.end(); } catch (_) {}
-  });
-});
-
-// ── Setup wizard check ────────────────────────────────────────────────────────
-app.get('/setup', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
-});
-
+// ── Setup wizard ───────────────────────────────────────────────────────────
 app.get('/api/setup/status', (req, res) => {
   const s = readState();
-  res.json({ complete: !!s.setup_complete, activeBackend: s.activeBackend || 'openclaw' });
+  res.json({ complete: !!s.setup_complete });
 });
 
-app.post('/api/setup/complete', (req, res) => {
+app.post('/api/setup/complete', authLimiter, (req, res) => {
   const s = readState();
   if (s.setup_complete) return res.status(403).json({ error: 'Setup already complete' });
-  const { password, provider, apiKey, backend, channel } = req.body || {};
+  const { password, backend } = req.body || {};
   if (password) {
     // Update admin password in users.json
     const users = loadUsers();
@@ -453,9 +151,8 @@ app.post('/api/setup/complete', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Local AI scanner ──────────────────────────────────────────────────────────
+// ── Local AI scanner ───────────────────────────────────────────────────────
 app.get('/api/scan/local-ai', auth, async (req, res) => {
-  const fetch = (await import('node-fetch')).default;
   const CANDIDATES = [
     { name: 'Ollama',     url: 'http://localhost:11434', check: '/api/tags',   type: 'ollama'    },
     { name: 'LM Studio', url: 'http://localhost:1234',  check: '/v1/models',  type: 'openai'    },
@@ -470,283 +167,472 @@ app.get('/api/scan/local-ai', auth, async (req, res) => {
   ];
   const results = await Promise.all(CANDIDATES.map(async (c) => {
     try {
-      const r = await fetch(c.url + c.check, { timeout: 1500 });
-      if (r.ok) {
-        let models = [];
-        try {
-          const d = await r.json();
-          if (c.type === 'ollama' && d.models) models = d.models.map(m => m.name);
-          else if (d.data) models = d.data.map(m => m.id);
-        } catch (_) {}
-        return { ...c, reachable: true, models };
-      }
-    } catch (_) {}
-    return { ...c, reachable: false, models: [] };
+      const r = await fetch(c.url + c.check, { signal: AbortSignal.timeout(1500) });
+      return { ...c, online: r.ok || r.status < 500 };
+    } catch {
+      return { ...c, online: false };
+    }
   }));
-  // Deduplicate by url
-  const seen = new Set();
-  const deduped = results.filter(r => { if (seen.has(r.url)) return false; seen.add(r.url); return true; });
-  res.json({ services: deduped });
+  res.json(results.filter(r => r.online));
 });
 
-// ── Conversation history ──────────────────────────────────────────────────────
+// ── Version ────────────────────────────────────────────────────────────────
+let versionCache = null;
+let versionCacheAt = 0;
+app.get('/api/version', async (req, res) => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+  const current = pkg.version;
+  const now = Date.now();
+  if (!versionCache || now - versionCacheAt > 3_600_000) {
+    try {
+      const r = await fetch('https://api.github.com/repos/hbkdad/selfclawy/releases/latest',
+        { headers: { 'User-Agent': 'beacon-dashboard' }, signal: AbortSignal.timeout(5000) });
+      if (r.ok) { versionCache = (await r.json()).tag_name?.replace(/^v/, '') || current; }
+    } catch { versionCache = current; }
+    versionCacheAt = now;
+  }
+  res.json({ current, latest: versionCache, updateAvailable: versionCache !== current });
+});
+
+// ── Backends status ────────────────────────────────────────────────────────
+async function checkBackend(name) {
+  const b = BACKENDS[name];
+  if (!b) return { online: false };
+  try {
+    const r = await fetch(b.url + b.healthPath, { signal: AbortSignal.timeout(3000) });
+    return { online: r.ok || r.status < 500, status: r.status };
+  } catch {
+    return { online: false };
+  }
+}
+
+app.get('/api/status', auth, async (req, res) => {
+  const s = await checkBackend('openclaw');
+  res.json(s);
+});
+
+app.get('/api/backends', auth, async (req, res) => {
+  const state = readState();
+  const results = await Promise.all(Object.keys(BACKENDS).map(async n => {
+    const s = await checkBackend(n);
+    return [n, s];
+  }));
+  res.json({ backends: Object.fromEntries(results), activeBackend: state.activeBackend || 'openclaw' });
+});
+
+app.get('/api/status/:backend', auth, async (req, res) => {
+  const { backend } = req.params;
+  if (!BACKENDS[backend]) return res.status(404).json({ error: 'Unknown backend' });
+  res.json(await checkBackend(backend));
+});
+
+app.post('/api/backend/switch', auth, verifyCsrf, (req, res) => {
+  const { backend } = req.body || {};
+  if (!BACKENDS[backend]) return res.status(400).json({ error: 'Unknown backend' });
+  const s = readState();
+  writeState({ ...s, activeBackend: backend });
+  db.addAudit(req.user?.username || 'unknown', 'backend_switch', backend, 'ok', req.ip);
+  res.json({ ok: true, activeBackend: backend });
+});
+
+// ── Container controls ─────────────────────────────────────────────────────
+async function containerAction(name, action) {
+  const c = docker.getContainer(name);
+  switch (action) {
+    case 'start':   await c.start();   break;
+    case 'stop':    await c.stop();    break;
+    case 'restart': await c.restart(); break;
+    default: throw new Error('Unknown action');
+  }
+}
+
+const CONTAINER_MAP = { openclaw: 'openclaw', hermes: 'hermes', ollama: 'ollama' };
+
+['start', 'stop', 'restart'].forEach(action => {
+  app.post(`/api/${action}`, auth, verifyCsrf, async (req, res) => {
+    try {
+      await containerAction('openclaw', action);
+      db.addAudit(req.user?.username || 'unknown', action, 'openclaw', 'ok', req.ip);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.post(`/api/:backend/${action}`, auth, verifyCsrf, async (req, res) => {
+    const { backend } = req.params;
+    const container = CONTAINER_MAP[backend];
+    if (!container) return res.status(404).json({ error: 'Unknown backend' });
+    try {
+      await containerAction(container, action);
+      db.addAudit(req.user?.username || 'unknown', action, backend, 'ok', req.ip);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+});
+
+// ── Logs via Socket.io ─────────────────────────────────────────────────────
+io.use((socket, next) => {
+  const { authorization } = socket.handshake.headers;
+  if (AUTH_MODE === 'jwt') {
+    if (!authorization?.startsWith('Bearer ')) return next(new Error('Unauthorized'));
+    try { socket.user = jwt.verify(authorization.slice(7), JWT_SECRET); next(); }
+    catch { next(new Error('Invalid token')); }
+  } else {
+    if (!authorization?.startsWith('Basic ')) return next(new Error('Unauthorized'));
+    const [user, pass] = Buffer.from(authorization.slice(6), 'base64').toString().split(':');
+    const users = loadUsers();
+    const found = users.find(u => u.username === user && bcrypt.compareSync(pass, u.passwordHash));
+    if (!found) return next(new Error('Unauthorized'));
+    socket.user = found;
+    next();
+  }
+});
+
+io.on('connection', (socket) => {
+  socket.on('subscribe_logs', async ({ backend = 'openclaw' } = {}) => {
+    const container = CONTAINER_MAP[backend] || 'openclaw';
+    try {
+      const c = docker.getContainer(container);
+      const stream = await c.logs({ stdout: true, stderr: true, tail: 100, follow: true });
+      stream.on('data', chunk => socket.emit('log', { backend, line: chunk.toString('utf8') }));
+      stream.on('end', () => socket.emit('log_end', { backend }));
+      socket.on('disconnect', () => stream.destroy());
+    } catch (e) {
+      socket.emit('log_error', { backend, error: e.message });
+    }
+  });
+});
+
+// ── Config ─────────────────────────────────────────────────────────────────
+app.get('/api/config', auth, (req, res) => {
+  try {
+    const config = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8'));
+    res.json(config);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/config', auth, verifyCsrf, (req, res) => {
+  try {
+    const config = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8'));
+    if (req.body.model) config.model = req.body.model;
+    fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(config, null, 2));
+    db.addAudit(req.user?.username || 'unknown', 'config_update', 'openclaw', 'ok', req.ip);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Ollama models ──────────────────────────────────────────────────────────
+app.get('/api/ollama/models', auth, async (req, res) => {
+  try {
+    const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return res.status(r.status).json({ error: 'Ollama error' });
+    res.json(await r.json());
+  } catch (e) { res.status(503).json({ error: e.message }); }
+});
+
+app.post('/api/ollama/pull', auth, verifyCsrf, async (req, res) => {
+  const { model } = req.body || {};
+  if (!model) return res.status(400).json({ error: 'model required' });
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.flushHeaders();
+  try {
+    const r = await fetch(`${OLLAMA_URL}/api/pull`, {
+      method: 'POST', body: JSON.stringify({ name: model }), signal: AbortSignal.timeout(300_000),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(`data: ${dec.decode(value)}\n\n`);
+    }
+    res.end();
+  } catch (e) { res.write(`data: {"error":"${e.message}"}\n\n`); res.end(); }
+});
+
+// ── Hermes migrate ─────────────────────────────────────────────────────────
+app.post('/api/hermes/migrate', auth, verifyCsrf, async (req, res) => {
+  try {
+    const c = docker.getContainer('hermes');
+    const exec = await c.exec({ Cmd: ['hermes', 'claw', 'migrate'], AttachStdout: true, AttachStderr: true });
+    const stream = await exec.start();
+    let out = '';
+    stream.on('data', chunk => { out += chunk.toString('utf8'); });
+    stream.on('end', () => res.json({ ok: true, output: out }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Skills ─────────────────────────────────────────────────────────────────
+const SKILL_FALLBACK = [
+  { name: 'web-search',     description: 'Search the web',                   category: 'utility',     installs: 95000 },
+  { name: 'github',         description: 'Interact with GitHub repos',        category: 'dev',         installs: 80000 },
+  { name: 'filesystem',     description: 'Read and write local files',        category: 'utility',     installs: 75000 },
+  { name: 'sqlite',         description: 'Query SQLite databases',            category: 'data',        installs: 42000 },
+  { name: 'code-review',    description: 'Review code for issues and style',  category: 'dev',         installs: 38000 },
+  { name: 'summarize',      description: 'Summarize long documents',          category: 'productivity',installs: 30000 },
+  { name: 'translate',      description: 'Translate text to any language',    category: 'utility',     installs: 28000 },
+  { name: 'image-gen',      description: 'Generate images with Stable Diffusion', category: 'creative', installs: 22000 },
+  { name: 'calendar',       description: 'Manage calendar events',            category: 'productivity',installs: 18000 },
+  { name: 'email',          description: 'Read and send emails',              category: 'productivity',installs: 15000 },
+];
+
+app.get('/api/skills', auth, async (req, res) => {
+  const { q, category } = req.query;
+  let skills = SKILL_FALLBACK;
+  if (category) skills = skills.filter(s => s.category === category);
+  if (q) skills = skills.filter(s => s.name.includes(q) || s.description.toLowerCase().includes(q.toLowerCase()));
+  res.json(skills);
+});
+
+app.get('/api/skills/installed', auth, async (req, res) => {
+  try {
+    const c = docker.getContainer('openclaw');
+    const exec = await c.exec({ Cmd: ['openclaw', 'skill', 'list', '--json'], AttachStdout: true, AttachStderr: true });
+    const stream = await exec.start();
+    let out = '';
+    stream.on('data', chunk => { out += chunk.toString('utf8'); });
+    stream.on('end', () => {
+      try { res.json(JSON.parse(out)); }
+      catch { res.json([]); }
+    });
+  } catch { res.json([]); }
+});
+
+app.post('/api/skills/install', auth, verifyCsrf, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const c = docker.getContainer('openclaw');
+    const execObj = await c.exec({ Cmd: ['openclaw', 'skill', 'install', name], AttachStdout: true, AttachStderr: true });
+    const stream = await execObj.start();
+    let out = '';
+    stream.on('data', chunk => { out += chunk.toString('utf8'); });
+    stream.on('end', () => {
+      db.addAudit(req.user?.username || 'unknown', 'skill_install', name, 'ok', req.ip);
+      res.json({ ok: true, output: out });
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Conversation history ───────────────────────────────────────────────────
 app.get('/api/history', auth, (req, res) => {
-  const { backend, limit = '50', offset = '0' } = req.query;
-  res.json(db.getConversations({ backend, limit: parseInt(limit), offset: parseInt(offset) }));
+  const { backend, limit = 50, offset = 0 } = req.query;
+  res.json(db.getHistory({ backend, limit: +limit, offset: +offset }));
 });
 
 app.get('/api/history/:id', auth, (req, res) => {
-  const row = db.getConversation(parseInt(req.params.id));
+  const row = db.getHistoryById(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   res.json(row);
 });
 
 app.delete('/api/history/:id', auth, verifyCsrf, (req, res) => {
-  db.deleteConversation(parseInt(req.params.id));
-  db.addAudit(req.user?.username || 'admin', 'delete_history', req.params.id, 'ok', req.ip);
+  db.deleteHistory(req.params.id);
+  db.addAudit(req.user?.username || 'unknown', 'history_delete', req.params.id, 'ok', req.ip);
   res.json({ ok: true });
 });
 
-// ── User management ───────────────────────────────────────────────────────────
+// ── Users ──────────────────────────────────────────────────────────────────
 app.get('/api/users', auth, (req, res) => {
-  const users = loadUsers().map(u => ({ username: u.username, role: u.role }));
+  const users = loadUsers().map(({ username, role }) => ({ username, role }));
   res.json(users);
 });
 
-app.post('/api/users', auth, verifyCsrf, async (req, res) => {
-  if (req.user?.role !== 'admin' && AUTH_MODE === 'jwt') return res.status(403).json({ error: 'Admin only' });
+app.post('/api/users', auth, verifyCsrf, (req, res) => {
+  if (AUTH_MODE !== 'jwt') return res.status(403).json({ error: 'JWT mode only' });
   const { username, password, role = 'viewer' } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'username and password required' });
   const users = loadUsers();
   if (users.find(u => u.username === username)) return res.status(409).json({ error: 'User exists' });
   users.push({ username, passwordHash: bcrypt.hashSync(password, 10), role });
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-  db.addAudit(req.user?.username || 'admin', 'create_user', username, 'ok', req.ip);
+  saveUsers(users);
+  db.addAudit(req.user?.username || 'unknown', 'user_create', username, 'ok', req.ip);
   res.json({ ok: true });
 });
 
-app.patch('/api/users/:username', auth, verifyCsrf, async (req, res) => {
-  if (req.user?.role !== 'admin' && AUTH_MODE === 'jwt') return res.status(403).json({ error: 'Admin only' });
-  const { password, role } = req.body || {};
+app.patch('/api/users/:username', auth, verifyCsrf, (req, res) => {
   const users = loadUsers();
   const user = users.find(u => u.username === req.params.username);
   if (!user) return res.status(404).json({ error: 'Not found' });
-  if (password) user.passwordHash = bcrypt.hashSync(password, 10);
-  if (role) user.role = role;
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-  db.addAudit(req.user?.username || 'admin', 'update_user', req.params.username, 'ok', req.ip);
+  if (req.body.password) user.passwordHash = bcrypt.hashSync(req.body.password, 10);
+  if (req.body.role) user.role = req.body.role;
+  saveUsers(users);
+  db.addAudit(req.user?.username || 'unknown', 'user_update', req.params.username, 'ok', req.ip);
   res.json({ ok: true });
 });
 
 app.delete('/api/users/:username', auth, verifyCsrf, (req, res) => {
-  if (req.user?.role !== 'admin' && AUTH_MODE === 'jwt') return res.status(403).json({ error: 'Admin only' });
-  if (req.params.username === 'admin') return res.status(400).json({ error: 'Cannot delete admin' });
-  const users = loadUsers().filter(u => u.username !== req.params.username);
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-  db.addAudit(req.user?.username || 'admin', 'delete_user', req.params.username, 'ok', req.ip);
+  let users = loadUsers();
+  if (!users.find(u => u.username === req.params.username)) return res.status(404).json({ error: 'Not found' });
+  users = users.filter(u => u.username !== req.params.username);
+  saveUsers(users);
+  db.addAudit(req.user?.username || 'unknown', 'user_delete', req.params.username, 'ok', req.ip);
   res.json({ ok: true });
 });
 
-// ── MCP server management ─────────────────────────────────────────────────────
-app.get('/api/mcp/servers', auth, (req, res) => {
-  res.json(db.getMcpServers().map(s => ({ ...s, auth_token: s.auth_token ? '***' : null })));
-});
+// ── MCP servers ────────────────────────────────────────────────────────────
+const PRIVATE_RANGES = [
+  /^127\./,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2[0-9]|3[01])\./,
+  /^::1$/,
+  /^localhost$/i,
+];
+function isPrivateUrl(urlStr) {
+  try {
+    const { hostname } = new URL(urlStr);
+    return PRIVATE_RANGES.some(re => re.test(hostname));
+  } catch { return true; }
+}
+
+app.get('/api/mcp/servers', auth, (req, res) => res.json(db.getMcpServers()));
 
 app.post('/api/mcp/servers', auth, verifyCsrf, (req, res) => {
   const { name, url, auth_token } = req.body || {};
   if (!name || !url) return res.status(400).json({ error: 'name and url required' });
-  db.addMcpServer(name, url, auth_token);
-  db.addAudit(req.user?.username || 'admin', 'add_mcp_server', name, 'ok', req.ip);
-  res.json({ ok: true });
+  if (isPrivateUrl(url)) return res.status(400).json({ error: 'Private/loopback URLs not allowed' });
+  const id = db.addMcpServer({ name, url, auth_token });
+  db.addAudit(req.user?.username || 'unknown', 'mcp_add', name, 'ok', req.ip);
+  res.json({ ok: true, id });
 });
 
 app.delete('/api/mcp/servers/:id', auth, verifyCsrf, (req, res) => {
-  db.deleteMcpServer(parseInt(req.params.id));
-  db.addAudit(req.user?.username || 'admin', 'delete_mcp_server', req.params.id, 'ok', req.ip);
+  db.deleteMcpServer(req.params.id);
+  db.addAudit(req.user?.username || 'unknown', 'mcp_delete', req.params.id, 'ok', req.ip);
   res.json({ ok: true });
 });
 
-app.patch('/api/mcp/servers/:id/toggle', auth, verifyCsrf, (req, res) => {
-  const server = db.getMcpServers().find(s => s.id === parseInt(req.params.id));
-  if (!server) return res.status(404).json({ error: 'Not found' });
-  const enabled = !server.enabled;
-  db.toggleMcpServer(parseInt(req.params.id), enabled);
-  db.addAudit(req.user?.username || 'admin', enabled ? 'enable_mcp_server' : 'disable_mcp_server', server.name, 'ok', req.ip);
-  res.json({ ok: true, enabled });
-});
-
-app.post('/api/mcp/servers/:id/test', auth, async (req, res) => {
+app.post('/api/mcp/servers/:id/test', auth, verifyCsrf, async (req, res) => {
   const servers = db.getMcpServers();
-  const server = servers.find(s => s.id === parseInt(req.params.id));
+  const server = servers.find(s => String(s.id) === req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
+  if (isPrivateUrl(server.url)) return res.status(400).json({ error: 'Private/loopback URLs not allowed' });
   try {
-    const fetch = (await import('node-fetch')).default;
-    const headers = {};
-    if (server.auth_token) headers['Authorization'] = `Bearer ${server.auth_token}`;
-    const r = await fetch(server.url, { timeout: 5000, headers });
-    res.json({ ok: r.ok, status: r.status });
-  } catch (err) {
-    res.json({ ok: false, error: err.message });
-  }
+    const r = await fetch(server.url, { signal: AbortSignal.timeout(5000) });
+    res.json({ ok: true, status: r.status });
+  } catch (e) { res.status(503).json({ ok: false, error: e.message }); }
 });
 
-// ── ClawHub skill browser ─────────────────────────────────────────────────────
-const CURATED_SKILLS = [
-  { name: 'web-search',      description: 'Search the web and summarize results in chat',              category: 'Information',  installs: 22100, version: '3.0.1' },
-  { name: 'reminder',        description: 'Set reminders — "remind me in 30 min to call John"',        category: 'Productivity', installs: 18400, version: '2.1.0' },
-  { name: 'image-gen',       description: 'Generate images via DALL·E or Stable Diffusion',            category: 'Creative',     installs: 15700, version: '2.2.0' },
-  { name: 'summarize',       description: 'Summarize URLs, PDFs, or pasted text blocks',               category: 'Productivity', installs: 16500, version: '2.4.0' },
-  { name: 'todo',            description: 'Manage a personal to-do list across sessions',              category: 'Productivity', installs: 14200, version: '1.8.0' },
-  { name: 'email-draft',     description: 'Draft professional emails from bullet points',              category: 'Communication',installs: 13200, version: '1.6.0' },
-  { name: 'weather',         description: 'Current conditions and forecasts for any city',             category: 'Information',  installs: 19800, version: '1.5.2' },
-  { name: 'daily-brief',     description: 'Morning briefing: weather + news + calendar + tasks',       category: 'Productivity', installs: 9800,  version: '1.4.0' },
-  { name: 'spotify',         description: 'Play, pause, skip, and search Spotify tracks by chat',      category: 'Media',        installs: 10200, version: '1.3.0' },
-  { name: 'news',            description: 'Top headlines from configurable news sources',              category: 'Information',  installs: 11300, version: '1.3.0' },
-  { name: 'youtube-summary', description: 'Summarize any YouTube video from its URL',                  category: 'Media',        installs: 8400,  version: '1.2.0' },
-  { name: 'calendar-sync',   description: 'Read and create Google Calendar events',                    category: 'Productivity', installs: 8900,  version: '1.4.0' },
-  { name: 'proofreader',     description: 'Grammar, style, and readability improvements',              category: 'Writing',      installs: 7300,  version: '1.5.0' },
-  { name: 'github-issues',   description: 'Create, list, and comment on GitHub issues by chat',        category: 'Development',  installs: 7800,  version: '1.1.0' },
-  { name: 'notion-pages',    description: 'Create and append to Notion pages by chat',                 category: 'Productivity', installs: 6700,  version: '1.1.0' },
-  { name: 'translate',       description: 'Translate text between 100+ languages via LibreTranslate',  category: 'Language',     installs: 9700,  version: '1.2.1' },
-  { name: 'stock-ticker',    description: 'Live stock prices and basic fundamentals',                  category: 'Finance',      installs: 5800,  version: '1.0.4' },
-  { name: 'crypto-price',    description: 'Real-time crypto prices and 24h change',                   category: 'Finance',      installs: 6100,  version: '1.1.0' },
-  { name: 'system-monitor',  description: 'Report CPU, RAM, disk usage on your server',               category: 'DevOps',       installs: 5200,  version: '1.2.0' },
-  { name: 'docker-manager',  description: 'List, start, and stop containers by chat',                  category: 'DevOps',       installs: 4100,  version: '1.0.1' },
-  { name: 'home-assistant',  description: 'Control Home Assistant devices and automations',            category: 'Smart Home',   installs: 3700,  version: '2.0.0' },
-  { name: 'expense-tracker', description: 'Log expenses by message, export weekly CSV',               category: 'Finance',      installs: 4200,  version: '1.0.1' },
-  { name: 'code-review',     description: 'Paste code, get a review with improvement suggestions',    category: 'Development',  installs: 5400,  version: '1.0.3' },
-  { name: 'tweet-draft',     description: 'Draft and schedule tweets with tone options',               category: 'Social',       installs: 4900,  version: '1.0.2' },
-];
-
-app.get('/api/skills', auth, async (req, res) => {
-  const q = (req.query.q || '').toLowerCase();
-  const category = req.query.category || '';
-  try {
-    const fetch = (await import('node-fetch')).default;
-    const r = await fetch(`https://hub.openclaw.ai/api/skills?limit=50${q ? `&q=${encodeURIComponent(q)}` : ''}`, { timeout: 4000 });
-    if (r.ok) return res.json(await r.json());
-  } catch (_) {}
-  let skills = CURATED_SKILLS;
-  if (q) skills = skills.filter(s => s.name.includes(q) || s.description.toLowerCase().includes(q) || s.category.toLowerCase().includes(q));
-  if (category) skills = skills.filter(s => s.category === category);
-  res.json({ skills, source: 'curated', total: skills.length });
-});
-
-app.get('/api/skills/installed', auth, async (req, res) => {
-  try {
-    const container = docker.getContainer('openclaw');
-    const ex = await container.exec({ Cmd: ['openclaw', 'skill', 'list', '--json'], AttachStdout: true, AttachStderr: true });
-    const stream = await ex.start({ hijack: true, stdin: false });
-    let out = '';
-    stream.on('data', (chunk) => { out += chunk.slice(8).toString('utf8'); });
-    stream.on('end', () => { try { res.json(JSON.parse(out)); } catch { res.json({ skills: [] }); } });
-  } catch { res.json({ skills: [] }); }
-});
-
-app.post('/api/skills/install', auth, verifyCsrf, async (req, res) => {
-  const { name } = req.body || {};
-  if (!name || !/^[a-z0-9_-]{1,64}$/.test(name)) return res.status(400).json({ error: 'Invalid skill name' });
-  db.addAudit(req.user?.username || 'admin', 'install_skill', name, 'started', req.ip);
-  try {
-    const container = docker.getContainer('openclaw');
-    const ex = await container.exec({ Cmd: ['openclaw', 'skill', 'install', name], AttachStdout: true, AttachStderr: true });
-    const stream = await ex.start({ hijack: true, stdin: false });
-    let out = '';
-    stream.on('data', (chunk) => { out += chunk.slice(8).toString('utf8'); });
-    stream.on('end', () => {
-      db.addAudit(req.user?.username || 'admin', 'install_skill', name, 'ok', req.ip);
-      res.json({ ok: true, output: out });
-    });
-    stream.on('error', (e) => res.status(500).json({ error: e.message }));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Routing rules ─────────────────────────────────────────────────────────────
-app.get('/api/routing', auth, (req, res) => { res.json(db.getRoutingRules()); });
+// ── Routing rules ──────────────────────────────────────────────────────────
+app.get('/api/routing', auth, (req, res) => res.json(db.getRoutingRules()));
 
 app.post('/api/routing', auth, verifyCsrf, (req, res) => {
   const { condition_type, condition_value, target_model, target_backend, priority = 0 } = req.body || {};
-  if (!condition_type || !condition_value || !target_model) return res.status(400).json({ error: 'condition_type, condition_value, target_model required' });
-  db.addRoutingRule(condition_type, condition_value, target_model, target_backend, priority);
-  res.json({ ok: true });
+  if (!condition_type || !target_model) return res.status(400).json({ error: 'condition_type and target_model required' });
+  const id = db.addRoutingRule({ condition_type, condition_value, target_model, target_backend, priority });
+  db.addAudit(req.user?.username || 'unknown', 'routing_add', condition_type, 'ok', req.ip);
+  res.json({ ok: true, id });
 });
 
 app.delete('/api/routing/:id', auth, verifyCsrf, (req, res) => {
-  db.deleteRoutingRule(parseInt(req.params.id));
+  db.deleteRoutingRule(req.params.id);
+  db.addAudit(req.user?.username || 'unknown', 'routing_delete', req.params.id, 'ok', req.ip);
   res.json({ ok: true });
 });
 
-app.patch('/api/routing/:id/toggle', auth, verifyCsrf, (req, res) => {
-  const rule = db.getRoutingRules().find(r => r.id === parseInt(req.params.id));
-  if (!rule) return res.status(404).json({ error: 'Not found' });
-  const enabled = !rule.enabled;
-  db.toggleRoutingRule(parseInt(req.params.id), enabled);
-  res.json({ ok: true, enabled });
-});
-
-// ── Presets ───────────────────────────────────────────────────────────────────
-app.get('/api/presets', auth, (req, res) => { res.json(db.getPresets()); });
+// ── Presets ────────────────────────────────────────────────────────────────
+app.get('/api/presets', auth, (req, res) => res.json(db.getPresets()));
 
 app.post('/api/presets', auth, verifyCsrf, (req, res) => {
   const { name, system_prompt, model, channel } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
-  db.addPreset(name, system_prompt, model, channel);
-  res.json({ ok: true });
+  const id = db.addPreset({ name, system_prompt, model, channel });
+  db.addAudit(req.user?.username || 'unknown', 'preset_add', name, 'ok', req.ip);
+  res.json({ ok: true, id });
 });
 
 app.delete('/api/presets/:id', auth, verifyCsrf, (req, res) => {
-  db.deletePreset(parseInt(req.params.id));
+  db.deletePreset(req.params.id);
+  db.addAudit(req.user?.username || 'unknown', 'preset_delete', req.params.id, 'ok', req.ip);
   res.json({ ok: true });
 });
 
-// ── Audit log ─────────────────────────────────────────────────────────────────
+// ── Audit log ──────────────────────────────────────────────────────────────
 app.get('/api/audit', auth, (req, res) => {
-  const { limit = '100', offset = '0' } = req.query;
-  res.json(db.getAuditLog({ limit: parseInt(limit), offset: parseInt(offset) }));
+  const { limit = 100, offset = 0 } = req.query;
+  res.json(db.getAuditLog({ limit: +limit, offset: +offset }));
 });
 
-// ── Notifications ─────────────────────────────────────────────────────────────
-app.get('/api/notifications', auth, (req, res) => {
-  res.json({ notifications: db.getNotifications(), unread: db.getUnreadCount() });
-});
+// ── Notifications ──────────────────────────────────────────────────────────
+app.get('/api/notifications', auth, (req, res) => res.json(db.getNotifications()));
 
-app.post('/api/notifications/:id/read', auth, (req, res) => {
-  if (req.params.id === 'all') db.markAllRead();
-  else db.markRead(parseInt(req.params.id));
+app.post('/api/notifications/:id/read', auth, verifyCsrf, (req, res) => {
+  db.markNotificationRead(req.params.id);
   res.json({ ok: true });
 });
 
-// ── 7-day metrics ─────────────────────────────────────────────────────────────
+// ── Metrics ────────────────────────────────────────────────────────────────
+let metrics = { tokens: 0, errors: 0, requests: 0 };
+
+app.get('/api/metrics', auth, (req, res) => res.json(metrics));
+
 app.get('/api/metrics/history', auth, (req, res) => {
-  res.json(db.getMetrics7Days());
+  const { days = 7 } = req.query;
+  res.json(db.getMetricsHistory(+days));
 });
 
-// ── Restore backup ────────────────────────────────────────────────────────────
-app.post('/api/restore', auth, verifyCsrf, (req, res) => {
-  // Streams are complex; inform client of the manual approach for now
-  res.json({ ok: false, error: 'Restore via: docker run --rm -v <volume>:/data alpine tar xzf - < backup.tar.gz' });
+app.get('/metrics', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4');
+  res.send(
+    `beacon_tokens_total ${metrics.tokens}\n` +
+    `beacon_errors_total ${metrics.errors}\n` +
+    `beacon_requests_total ${metrics.requests}\n`
+  );
 });
 
-// ── Version / update check ────────────────────────────────────────────────────
-const pkg = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'package.json'), 'utf8'));
-let _latestCache = null;
-let _latestFetchedAt = 0;
+// ── Backup ─────────────────────────────────────────────────────────────────
+app.post('/api/backup', auth, verifyCsrf, async (req, res) => {
+  const { backend = 'openclaw' } = req.body || {};
+  const volume = backend === 'openclaw' ? 'openclaw_data' : `${backend}_data`;
+  const filename = `beacon-backup-${backend}-${Date.now()}.tar.gz`;
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', 'application/gzip');
+  try {
+    const container = await docker.createContainer({
+      Image: 'alpine', Cmd: ['tar', 'czf', '-', '-C', '/data', '.'],
+      HostConfig: { Binds: [`${volume}:/data:ro`], AutoRemove: true },
+    });
+    const stream = await container.attach({ stream: true, stdout: true, stderr: false });
+    await container.start();
+    stream.pipe(res);
+    stream.on('end', () => res.end());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-app.get('/api/version', auth, async (req, res) => {
-  const current = pkg.version;
-  const now = Date.now();
-  if (!_latestCache || now - _latestFetchedAt > 3600_000) {
-    try {
-      const r = await fetch('https://api.github.com/repos/hbkdad/selfclawy/releases/latest',
-        { headers: { 'User-Agent': 'beacon-dashboard' }, signal: AbortSignal.timeout(5000) });
-      const j = await r.json();
-      _latestCache = (j.tag_name || '').replace(/^v/, '');
-      _latestFetchedAt = now;
-    } catch (_) { _latestCache = null; }
+// ── Polling: metrics + webhook alerts ─────────────────────────────────────
+let lastBackendStatus = {};
+setInterval(async () => {
+  const state = readState();
+  const active = state.activeBackend || 'openclaw';
+  const s = await checkBackend(active);
+  const wasOnline = lastBackendStatus[active];
+  lastBackendStatus[active] = s.online;
+
+  if (s.online) metrics.requests++;
+  else metrics.errors++;
+
+  db.upsertDailyMetrics(new Date().toISOString().slice(0, 10), active, {
+    tokens: metrics.tokens,
+    errors: s.online ? 0 : 1,
+    requests: s.online ? 1 : 0,
+  });
+
+  if (wasOnline !== undefined && wasOnline !== s.online && ALERT_WEBHOOK_URL) {
+    const msg = s.online ? `✅ ${active} is back online` : `🚨 ${active} went offline`;
+    db.addNotification({ type: s.online ? 'up' : 'down', title: msg, body: '' });
+    fetch(ALERT_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: msg, content: msg }),
+    }).catch(() => {});
   }
-  res.json({ current, latest: _latestCache, updateAvailable: _latestCache && _latestCache !== current });
+}, 15_000);
+
+// ── Start ──────────────────────────────────────────────────────────────────
+httpServer.listen(PORT, () => {
+  console.log(`Beacon dashboard listening on port ${PORT}`);
+  db.init();
 });
 
-httpServer.listen(PORT, () => console.log(`Beacon dashboard running at http://localhost:${PORT}`));
+module.exports = app;

@@ -1,1 +1,44 @@
-placeholder — need actual content
+language: en-US
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches: [main]
+
+  path_instructions:
+    - path: "dashboard/server.js"
+      instructions: |
+        Focus on: security (SSRF, injection, auth bypass, CSRF), Express route correctness,
+        error handling, and SQLite query safety. Flag any unvalidated user input that reaches
+        exec/fs/db calls.
+    - path: "dashboard/public/**"
+      instructions: |
+        Focus on: XSS vectors (innerHTML, eval, unsafe attribute assignment), CSRF token
+        handling, and accessibility basics. Flag onclick handlers built from user data.
+    - path: "dashboard/tests/**"
+      instructions: |
+        Check that new routes have corresponding tests. Flag missing auth tests, missing
+        error-path tests, and tests that mock too aggressively (hiding real bugs).
+    - path: "launcher/**"
+      instructions: |
+        Go code review: focus on error handling, command injection in exec.Command calls,
+        file permission safety (os.WriteFile modes), and HTTP client timeout enforcement.
+    - path: ".github/workflows/**"
+      instructions: |
+        Check for: secrets in logs (echo $SECRET), untrusted input in run: steps
+        (github.event.*.body injected into shell), overly broad permissions, and
+        missing pin-by-SHA for third-party actions.
+
+chat:
+  auto_reply: true
+
+code_generation:
+  docstrings:
+    language: english
