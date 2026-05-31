@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.4.0] — 2026-05-31
+
+### Added
+- **Pre-built Docker image** — `ghcr.io/hbkdad/beacon-dashboard:latest` published to GHCR on every merge to main and on tagged releases. Fixes Windows launcher install error (`unable to prepare context: path "...\dashboard" not found`).
+- **Per-model cost estimation panel** — new `/api/metrics/by-model` route + 7-day cost chart in dashboard.
+
+### Fixed
+- **SSRF**: MCP server URL field now validates scheme (http/https only) and blocks RFC-1918, loopback, and link-local addresses.
+- **CSRF**: `POST /api/mcp/servers/:id/test` and `POST /api/notifications/:id/read` now require CSRF token.
+- **Rate-limit**: `POST /api/setup/complete` protected by `authLimiter` (20 req / 15 min).
+- **XSS**: Scanner card `onclick` dynamic content moved from inline string to `data-svc` attribute.
+- **Launcher caching**: `docker-compose.yml` is now always re-downloaded on every launcher run, ensuring fixes are picked up without manually deleting the cached file.
+
+### Changed
+- **Model dropdown** — adds GPT-5.5, Gemini 2.5 Flash/Pro with context window labels; removes deprecated `claude-sonnet-4-20250514` and `claude-opus-4-20250514` (retire June 15 2026).
+- **Security middleware** — helmet.js v8.2.0 added (CSP disabled for inline dashboard).
+- **node-fetch removed** — all HTTP calls migrated to Node 18 native `fetch` with `AbortSignal.timeout()`.
+- **CI hardened** — lint covers `server.js`, `db.js`, `logParser.js`; no longer suppressed with `|| true`.
+
+---
+
 ## [1.3.0] — 2026-05-30
 
 ### Added
