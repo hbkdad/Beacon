@@ -94,7 +94,8 @@ services:
     container_name: beacon-dashboard
     restart: unless-stopped
     depends_on:
-      - openclaw
+      openclaw:
+        condition: service_healthy
     environment:
       - OPENCLAW_URL=http://openclaw:18789
       - HERMES_URL=http://hermes:8080

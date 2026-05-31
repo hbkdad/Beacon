@@ -149,6 +149,8 @@ function getPresets() { return getDb().prepare(`SELECT * FROM presets ORDER BY c
 function addPreset(name, system_prompt, model, channel) { return getDb().prepare(`INSERT INTO presets (name,system_prompt,model,channel,created_at) VALUES (?,?,?,?,?)`).run(name, system_prompt || null, model || null, channel || null, Date.now()); }
 function deletePreset(id) { return getDb().prepare(`DELETE FROM presets WHERE id=?`).run(id); }
 
+process.on('exit', () => { if (_db) _db.close(); });
+
 module.exports = {
   getDb, insertConversation, getConversations, getConversation, deleteConversation,
   upsertDailyMetrics, getMetrics7Days,
