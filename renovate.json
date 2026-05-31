@@ -1,0 +1,35 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "labels": ["deps"],
+  "packageRules": [
+    {
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dashboard npm deps",
+      "schedule": ["on monday before 9am"]
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["deps", "breaking-change"],
+      "automerge": false
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "matchDepNames": ["better-sqlite3"],
+      "automerge": false
+    }
+  ],
+  "npm": {
+    "fileMatch": ["dashboard/package\\.json"]
+  },
+  "ignorePaths": ["**/node_modules/**"],
+  "prConcurrentLimit": 5,
+  "commitMessagePrefix": "chore(deps):"
+}

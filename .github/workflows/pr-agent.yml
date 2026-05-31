@@ -1,0 +1,35 @@
+name: PR-Agent
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  pr_agent:
+    if: >
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       startsWith(github.event.comment.body, '/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR-Agent
+        uses: qodo-ai/pr-agent@v0.26
+        env:
+          OPENAI.KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI.API_TYPE: "anthropic"
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CONFIG.AI_TIMEOUT: "120"
+          CONFIG.MODEL: "claude-sonnet-4-6"
+          CONFIG.FALLBACK_MODELS: '["claude-haiku-4-5-20251001"]'
+          PR_REVIEWER.REQUIRE_SCORE_REVIEW: "false"
+          PR_REVIEWER.NUM_CODE_SUGGESTIONS: "4"
+          PR_REVIEWER.INLINE_CODE_COMMENTS: "true"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
