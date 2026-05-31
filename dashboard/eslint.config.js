@@ -21,6 +21,7 @@ module.exports = [
         Buffer: 'readonly',
         fetch: 'readonly',
         AbortSignal: 'readonly',
+        URL: 'readonly',
       },
     },
     rules: {
