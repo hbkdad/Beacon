@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -17,11 +18,13 @@ import (
 var Version = "dev"
 
 const (
-	repoOwner  = "hbkdad"
-	repoName   = "selfclawy"
-	dashURL    = "http://localhost:3001"
-	composeRaw = "https://raw.githubusercontent.com/hbkdad/selfclawy/main/docker-compose.yml"
-	envRaw     = "https://raw.githubusercontent.com/hbkdad/selfclawy/main/.env.example"
+	repoOwner         = "hbkdad"
+	repoName          = "selfclawy"
+	dashURL           = "http://localhost:3001"
+	composeRaw        = "https://raw.githubusercontent.com/hbkdad/selfclawy/main/docker-compose.yml"
+	envRaw            = "https://raw.githubusercontent.com/hbkdad/selfclawy/main/.env.example"
+	openclawConfigRaw = "https://raw.githubusercontent.com/hbkdad/selfclawy/main/config/openclaw.json"
+	hermesConfigRaw   = "https://raw.githubusercontent.com/hbkdad/selfclawy/main/config/hermes.yaml"
 )
 
 type ghRelease struct {
@@ -35,6 +38,8 @@ func main() {
 	step("Checking Docker", checkDocker)
 	step("Downloading docker-compose.yml", func() error { return download("docker-compose.yml", composeRaw) })
 	downloadIfMissing(".env", envRaw)
+	downloadIfMissing("config/openclaw.json", openclawConfigRaw)
+	downloadIfMissing("config/hermes.yaml", hermesConfigRaw)
 	promptFirstRun()
 	runCompose("pull")
 	runCompose("up", "-d")
@@ -42,7 +47,8 @@ func main() {
 	openBrowser(dashURL)
 	fmt.Println()
 	fmt.Println("  ✓  Beacon is running at", dashURL)
-	fmt.Println("  Press Ctrl+C to stop.\n")
+	fmt.Println("  Press Ctrl+C to stop.")
+	fmt.Println()
 	select {}
 }
 
@@ -93,6 +99,12 @@ func download(dst, url string) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("download %s failed: HTTP %d", url, resp.StatusCode)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
 	f, err := os.Create(dst)
 	if err != nil {
 		return err
@@ -103,7 +115,29 @@ func download(dst, url string) error {
 }
 
 func downloadIfMissing(dst, url string) {
-	if _, err := os.Stat(dst); err == nil {
+	info, err := os.Stat(dst)
+	if err == nil {
+		if info.Mode().IsRegular() {
+			return
+		}
+		if info.IsDir() {
+			entries, readErr := os.ReadDir(dst)
+			if readErr != nil || len(entries) > 0 {
+				step("Preparing "+dst, func() error {
+					if readErr != nil {
+						return readErr
+					}
+					return fmt.Errorf("%s exists as a non-empty directory", dst)
+				})
+				return
+			}
+			if removeErr := os.Remove(dst); removeErr != nil {
+				step("Preparing "+dst, func() error { return removeErr })
+				return
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		step("Checking "+dst, func() error { return err })
 		return
 	}
 	step("Downloading "+dst, func() error { return download(dst, url) })
@@ -116,15 +150,16 @@ func promptFirstRun() {
 	}
 	content := string(data)
 
-	// Only prompt if ANTHROPIC_API_KEY is unset (no value after =)
-	if !strings.Contains(content, "ANTHROPIC_API_KEY=\n") &&
-		!strings.Contains(content, "ANTHROPIC_API_KEY= \n") {
+	apiKey := envValue(content, "ANTHROPIC_API_KEY")
+	// Only prompt if ANTHROPIC_API_KEY is unset or still has the old placeholder.
+	if apiKey != "" && apiKey != "sk-ant-..." {
 		return
 	}
 
 	fmt.Println("\n  ── First-run setup ────────────────────────────────────")
 	fmt.Println("  You need an AI API key to start. Get one free at:")
-	fmt.Println("  https://console.anthropic.com/\n")
+	fmt.Println("  https://console.anthropic.com/")
+	fmt.Println()
 	fmt.Print("  Anthropic API key (sk-ant-...): ")
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -136,11 +171,23 @@ func promptFirstRun() {
 		if err := os.WriteFile(".env", []byte(updated), 0600); err != nil {
 			fmt.Println("  Warning: could not write .env:", err)
 		} else {
-			fmt.Println("  ✓ API key saved to .env\n")
+			fmt.Println("  ✓ API key saved to .env")
+			fmt.Println()
 		}
 	} else {
-		fmt.Println("  Skipping — edit .env manually before starting.\n")
+		fmt.Println("  Skipping — edit .env manually before starting.")
+		fmt.Println()
 	}
+}
+
+func envValue(content, key string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, key+"=") {
+			return strings.TrimSpace(strings.TrimPrefix(line, key+"="))
+		}
+	}
+	return ""
 }
 
 func runCompose(args ...string) {
