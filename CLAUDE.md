@@ -18,8 +18,8 @@ beacon/ (repo: selfclawy)
 │   │   ├── index.html     # Main dashboard (tabbed: Dashboard/History/Team/Settings)
 │   │   └── setup.html     # First-run wizard (5 steps)
 │   ├── tests/
-│   │   └── api.test.js    # Jest+Supertest, 31 tests
-│   └── package.json       # v1.3.0
+│   │   └── api.test.js    # Jest+Supertest, 49 tests
+│   └── package.json       # v1.4.0
 ├── hermes/
 │   ├── Dockerfile         # python:3.11-slim + NousResearch/hermes-agent
 │   └── entrypoint.sh      # Writes ~/.hermes/config.yaml from env, runs hermes gateway
@@ -32,6 +32,16 @@ beacon/ (repo: selfclawy)
 ├── docker-compose.yml     # 5 services: openclaw, hermes, ollama, dashboard, watchtower
 ├── docker-compose.gpu.yml # NVIDIA GPU override for Ollama
 ├── .env.example
+├── renovate.json          # weekly dep PRs, auto-merge Actions bumps
+├── .coderabbit.yaml       # path-specific AI review rules
+├── .github/
+│   ├── release-drafter.yml   # semver categories config
+│   └── workflows/
+│       ├── ci.yml
+│       ├── release.yml       # tag → GitHub Release + binaries (workflow_dispatch too)
+│       ├── claude.yml        # @claude mentions → code fixes
+│       ├── pr-agent.yml      # auto-review + slash commands
+│       └── release-drafter.yml
 ├── README.md
 └── CHANGELOG.md
 ```
@@ -113,7 +123,7 @@ OLLAMA_PORT=11434
 ```bash
 cd dashboard
 npm install          # install deps
-npm test             # jest --runInBand --forceExit (31 tests)
+npm test             # jest --runInBand --forceExit (49 tests)
 npm run lint         # eslint server.js
 npm start            # node server.js
 
@@ -126,10 +136,10 @@ docker compose --profile hermes up -d  # enable Hermes
 
 ## Test Architecture (tests/api.test.js)
 - Mocks `dockerode` (container inspect/start/stop/restart/logs/exec)
-- Mocks `node-fetch` (health checks and Ollama API)
 - Mocks `better-sqlite3` (in-memory stub, no real DB)
+- Uses native `fetch` (Node 18+); no node-fetch dependency
 - Builds a minimal Express app mirroring server.js logic
-- All 31 tests use `supertest` against the in-memory app
+- All 49 tests use `supertest` against the in-memory app
 - Auth header: `Authorization: Basic YWRtaW46dGVzdHBhc3M=` (admin:testpass)
 
 ## Unique SelfClawy Advantages
@@ -149,10 +159,14 @@ docker compose --profile hermes up -d  # enable Hermes
 | SelfClawy | — | Container mgmt + 50+ channels + skills + routing |
 
 ## Branching & CI
-- Active feature branch: `claude/repo-scan-competitive-analysis-Sge5L`
+- All features merged to `main` — no active feature branch
 - CI: `.github/workflows/ci.yml` — lint + jest on push/PR
 - Tests must pass before merging to main
-- PR #1 is open for this feature branch
+- GitHub automation (all live on main):
+  - `claude.yml` — @claude mention → code analysis + commits
+  - `pr-agent.yml` — auto-review PRs + slash commands (/review, /describe, /improve, /ask)
+  - `release-drafter.yml` — auto-draft GitHub Release as PRs merge
+  - `release.yml` — tag v* or workflow_dispatch → cross-compile 4 binaries + publish Release
 
 ## Common Tasks for Claude Code
 - **Add a new API route**: add to server.js, add route stub to tests/api.test.js buildApp(), add test describe block

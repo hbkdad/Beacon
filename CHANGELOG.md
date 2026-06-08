@@ -23,6 +23,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - **Security middleware** — helmet.js v8.2.0 added (CSP disabled for inline dashboard).
 - **node-fetch removed** — all HTTP calls migrated to Node 18 native `fetch` with `AbortSignal.timeout()`.
 - **CI hardened** — lint covers `server.js`, `db.js`, `logParser.js`; no longer suppressed with `|| true`.
+- **Launcher banner** — removed marketing tagline; banner now shows version only.
+- **package.json** — bumped to v1.4.0; `helmet ^8.0.0` added as explicit dep; `node-fetch` removed.
+
+### Integrations (new GitHub automation)
+- **PR-Agent** (`qodo-ai/pr-agent@v0.26`) — auto-reviews every PR using `claude-sonnet-4-6`; slash commands `/review`, `/describe`, `/improve`, `/ask` in PR comments.
+- **Claude Code Action** (`anthropics/claude-code-action@v1`) — mention `@claude` in any PR or issue comment to trigger code analysis, fixes, and commits.
+- **Release Drafter** — auto-builds draft GitHub Release as PRs merge to `main`; semver resolved from PR labels.
+- **Renovate** — weekly grouped dep PRs for `dashboard/`; auto-merges GitHub Actions bumps; flags breaking changes.
+- **CodeRabbit** (`.coderabbit.yaml`) — path-specific AI review instructions for `server.js`, frontend, tests, Go launcher, and workflows.
 
 ---
 

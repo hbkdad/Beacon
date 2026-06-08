@@ -10,8 +10,6 @@
 
 **One control plane for OpenClaw + Hermes Agent + Ollama. Self-hosted, zero subscriptions.**
 
-AI that works for you, 24/7 — on your server, through your channels, on your terms.
-
 </div>
 
 **[Landing Page](https://hbkdad.github.io/selfclawy/docs/)** · [Setup Guide](docs/SETUP.md) · [Issues](https://github.com/hbkdad/selfclawy/issues) · [☕ Ko-fi](https://ko-fi.com/hbkcustomsinc)
