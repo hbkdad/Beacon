@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Version is injected at build time: -ldflags="-X main.Version=1.3.0"
+// Version is injected at build time: -ldflags="-X main.Version=1.4.0"
 var Version = "dev"
 
 const (
@@ -33,7 +33,6 @@ func main() {
 	banner()
 	go checkUpdate()
 	step("Checking Docker", checkDocker)
-	// Always re-fetch compose file so fixes/updates are picked up on every run
 	step("Downloading docker-compose.yml", func() error { return download("docker-compose.yml", composeRaw) })
 	downloadIfMissing(".env", envRaw)
 	promptFirstRun()
@@ -48,12 +47,7 @@ func main() {
 }
 
 func banner() {
-	fmt.Printf(`
-  ▸ beacon  v%s
-  AI that works for you, 24/7.
-  Self-hosted control plane for OpenClaw + Hermes + Ollama.
-
-`, Version)
+	fmt.Printf("  ▸ beacon  v%s\n\n", Version)
 }
 
 func checkUpdate() {
