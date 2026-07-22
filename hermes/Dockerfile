@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # System deps: git for clone, ripgrep for file search, ffmpeg for audio, Node.js for TS components
 RUN apt-get update -qq && \
